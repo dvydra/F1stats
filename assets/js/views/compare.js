@@ -89,15 +89,27 @@ const CompareView = {
     compareCard.appendChild(statRow('Career points', da.totalPoints, db.totalPoints));
     compareCard.appendChild(statRow('Championships', da.totalChampionshipWins, db.totalChampionshipWins));
     compareCard.appendChild(statRow('Best championship', da.bestChampionshipPosition, db.bestChampionshipPosition, false));
-    compareCard.appendChild(statRow('Mean DPI overall',
-      dpiA?.meanOverall != null ? dpiA.meanOverall.toFixed(1) : null,
-      dpiB?.meanOverall != null ? dpiB.meanOverall.toFixed(1) : null));
-    compareCard.appendChild(statRow('Mean Quali rating',
+    compareCard.appendChild(statRow('Shrunk DPI',
+      dpiA?.shrunkOverall != null ? dpiA.shrunkOverall.toFixed(1) : null,
+      dpiB?.shrunkOverall != null ? dpiB.shrunkOverall.toFixed(1) : null));
+    compareCard.appendChild(statRow('Best-75% DPI',
+      dpiA?.best75Overall != null ? dpiA.best75Overall.toFixed(1) : null,
+      dpiB?.best75Overall != null ? dpiB.best75Overall.toFixed(1) : null));
+    compareCard.appendChild(statRow('Mean Quali',
       dpiA?.meanQuali != null ? dpiA.meanQuali.toFixed(1) : null,
       dpiB?.meanQuali != null ? dpiB.meanQuali.toFixed(1) : null));
-    compareCard.appendChild(statRow('Mean Race rating',
+    compareCard.appendChild(statRow('Mean Race (DNF-adj)',
       dpiA?.meanRace != null ? dpiA.meanRace.toFixed(1) : null,
       dpiB?.meanRace != null ? dpiB.meanRace.toFixed(1) : null));
+    compareCard.appendChild(statRow('Quali Elo',
+      dpiA?.qualiElo != null ? Math.round(dpiA.qualiElo) : null,
+      dpiB?.qualiElo != null ? Math.round(dpiB.qualiElo) : null));
+    compareCard.appendChild(statRow('Race Elo',
+      dpiA?.raceElo != null ? Math.round(dpiA.raceElo) : null,
+      dpiB?.raceElo != null ? Math.round(dpiB.raceElo) : null));
+    compareCard.appendChild(statRow('DSC (ridge-decomposed)',
+      dpiA?.meanDsc != null ? dpiA.meanDsc.toFixed(1) : null,
+      dpiB?.meanDsc != null ? dpiB.meanDsc.toFixed(1) : null));
     view.appendChild(compareCard);
 
     // Per-season points chart
@@ -113,9 +125,9 @@ const CompareView = {
     chartCard.appendChild(UI.el('div', { class: 'chart-wrap tall' }, canvas));
     view.appendChild(chartCard);
 
-    // DPI by season chart
-    const dpiByYearA = new Map((dpiA?.seasons || []).map(s => [s.year, s.meanOverall]));
-    const dpiByYearB = new Map((dpiB?.seasons || []).map(s => [s.year, s.meanOverall]));
+    // DPI by season chart (shrunk overall — v2)
+    const dpiByYearA = new Map((dpiA?.seasons || []).map(s => [s.year, s.shrunkOverall ?? s.meanOverall]));
+    const dpiByYearB = new Map((dpiB?.seasons || []).map(s => [s.year, s.shrunkOverall ?? s.meanOverall]));
     const dpiCard = UI.el('section', { class: 'card' });
     dpiCard.appendChild(UI.h2({}, 'DPI by season'));
     dpiCard.appendChild(UI.p({ class: 'muted' },

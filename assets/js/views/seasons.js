@@ -96,11 +96,12 @@ const SeasonView = {
       return UI.el('section', { class: 'card' },
         UI.h2({}, 'Final driver standings'),
         UI.table(
-          ['#', 'Driver', 'Nat', 'Team', 'Points', 'Wins', 'DPI'],
+          ['#', 'Driver', 'Nat', 'Team', 'Points', 'Wins', 'DPI', 'qElo'],
           season.finalDriverStandings.map(s => {
             const d = drivers.get(s.driverId);
             const c = constructors.get(s.constructorId);
             const dr = dpiByDriver.get(s.driverId);
+            const dpiVal = dr?.shrunkOverall ?? dr?.meanOverallAdj;
             return [
               { value: s.position, class: `pos ${UI.posClass(s.position)}` },
               UI.driverLink(d),
@@ -109,8 +110,9 @@ const SeasonView = {
               { value: s.points, class: 'pts' },
               { value: s.wins ?? '—', class: 'pts' },
               UI.el('span', { class: 'pts',
-                style: dr?.meanOverall ? `color:${DPI.scoreColor(dr.meanOverall)};font-weight:700` : '' },
-                DPI.fmtScore(dr?.meanOverall)),
+                style: dpiVal != null ? `color:${DPI.scoreColor(dpiVal)};font-weight:700` : '' },
+                DPI.fmtScore(dpiVal)),
+              { value: dr?.qualiElo != null ? Math.round(dr.qualiElo) : '—', class: 'mono' },
             ];
           })
         )
@@ -164,7 +166,8 @@ const SeasonView = {
       const points = [];
       for (const d of dpi.drivers) {
         const s = standings.get(d.driverId);
-        if (d.meanOverall == null) continue;
+        const y = d.shrunkOverall ?? d.meanOverallAdj;
+        if (y == null) continue;
         const drv = drivers.get(d.driverId);
         const tm = constructors.get(d.team);
         points.push({
@@ -172,7 +175,7 @@ const SeasonView = {
           driverName: drv?.name || drv?.fullName || d.driverId,
           team: tm?.name || d.team,
           x: s?.points || 0,
-          y: d.meanOverall,
+          y,
           label: drv?.abbreviation || drv?.lastName || d.driverId,
         });
       }

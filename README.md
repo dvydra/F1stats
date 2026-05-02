@@ -19,34 +19,45 @@ No build step, no server, no API key. Just open `index.html`.
   filtered to ≥50 races.
 - **Global search** across drivers and teams.
 
-## DPI — the custom metric
+## DPI — the custom metric (v2)
 
-Hypothesis: F1 qualifying time is dominated by car performance, so a driver's
-true qualifying skill is the delta to their teammate (identical machinery).
-Race results, on the other hand, reflect the driver: position gained from grid
-to finish.
+**Hypothesis**: F1 qualifying time is dominated by car performance, so a
+driver's true qualifying skill is the delta to their teammate (identical
+machinery). Race results reflect the driver: position gained from grid to
+finish, weighted because front-of-grid gains are exponentially harder.
 
+**Base formulas (v1):**
 ```
-Quali Rating  = clamp(50 - delta_pct * 25, 0, 100)
-                delta_pct = (t_driver - t_teammate) / t_teammate * 100
-                (deepest qualifying session both drivers reached)
+QualiRating  = clamp(50 − Δ% × 25, 0, 100)
+               Δ% = (t_driver − t_teammate) / t_teammate × 100
+               (deepest qualifying session both drivers reached)
 
-Racecraft     = clamp(50 + net * 25, 0, 100)
-                net = Σ(1/k for k in positions_gained)
-                    - Σ(1/k for k in positions_lost)
-                Front positions weighted more — gaining P3→P1 = 1.5
-                vs P19→P18 = 0.056.
+Racecraft    = clamp(50 + net × 25, 0, 100)
+               net = Σ(1/k positions gained) − Σ(1/k positions lost)
 
-Overall       = 0.40 × Quali + 0.60 × Racecraft
+Overall      = 0.40 × Quali + 0.60 × Racecraft
 ```
 
-Edge cases:
-- **Mechanical DNF** → race excluded from racecraft (driver kept the quali credit).
-- **Driver-fault DNF** (collision/accident) → racecraft = 0.
-- **No teammate or no qualifying time** that weekend → quali excluded.
-- **Pit-lane start (grid 0)** → treated as P20 for weighting.
+**v2 enrichments** (after critically reviewing v1 against mainstream F1
+analytics — Elo, Bayesian decomposition, FastF1 community work):
 
-Full explainer at `#/dpi` in the running site.
+1. **DNF-adjusted Racecraft** — re-ranks each driver's grid position among
+   finishers only, so "free" gains from retirements ahead don't count.
+2. **Sprint integration** — sprint races and sprint-quali count at 0.3 weight.
+3. **Bayesian shrinkage** (`shrunkOverall`) — pulls aggregates toward 50
+   with `k=10` so one-race wonders can't dominate.
+4. **Best-75%** (`best75Overall`) — drops worst quartile of races, mutes
+   unlucky weekends.
+5. **Pit-stop counts** — exposed per driver per race for context.
+6. **Teammate Elo** — qualifying H2H and race-finish H2H Elo (K=24, init
+   1500), updated chronologically across all of F1 history. Solves the
+   "beating Hamilton ≠ beating a rookie" problem.
+7. **Ridge driver/car decomposition** (`DSC`) — per-season fit of
+   `log(t / median) = α_driver + β_team + ε` with L2 regularisation.
+   Driver coefficient α isolates skill from car effect; mapped to a 0–100
+   score.
+
+Full explainer with formulas at `#/dpi` in the running site.
 
 ## Data
 
@@ -71,6 +82,7 @@ data/dpi/all.json            -- all-time DPI summary across seasons
 To rebuild:
 
 ```bash
+pip install numpy scipy           # needed for ridge decomposition
 mkdir -p data/raw && cd data/raw
 curl -sSLO https://github.com/f1db/f1db/releases/download/v2026.3.0/f1db-json-splitted.zip
 unzip -o f1db-json-splitted.zip && cd ../..

@@ -39,18 +39,30 @@ const DriverView = {
 
       // DPI summary
       const myDpi = dpiAll.find(x => x.driverId === driverId);
-      if (myDpi && myDpi.meanOverall != null) {
+      if (myDpi && (myDpi.meanOverall != null || myDpi.qualiElo != null)) {
         view.appendChild(UI.el('section', { class: 'card' },
-          UI.h2({}, 'Driver Performance Index'),
+          UI.h2({}, 'Driver Performance Index — v2'),
           UI.p({ class: 'muted' },
-            'Career-weighted DPI averaged across every race the driver entered (since 2003 for fully reliable Q1/Q2/Q3 data; legacy single-session times are used pre-2003).'),
+            'Career metrics. Shrunk DPI is the recommended summary; Elo and DSC are orthogonal lenses.'),
           UI.el('div', { class: 'stat-grid' },
-            UI.statBlock('Mean Quali rating', DPI.fmtScore(myDpi.meanQuali)),
-            UI.statBlock('Mean Race rating', DPI.fmtScore(myDpi.meanRace)),
-            UI.statBlock('Overall DPI',
-              UI.el('span', { style: `color:${DPI.scoreColor(myDpi.meanOverall)}` },
-                DPI.fmtScore(myDpi.meanOverall))),
-            UI.statBlock('DPI seasons', myDpi.seasons.length),
+            UI.statBlock('Shrunk DPI',
+              UI.el('span', { style: `color:${DPI.scoreColor(myDpi.shrunkOverall)}` },
+                DPI.fmtScore(myDpi.shrunkOverall)),
+              `${myDpi.totalRaces} races, ${myDpi.totalSprints || 0} sprints`),
+            UI.statBlock('Best 75% DPI', DPI.fmtScore(myDpi.best75Overall)),
+            UI.statBlock('Mean Quali', DPI.fmtScore(myDpi.meanQuali)),
+            UI.statBlock('Mean Race (DNF-adj)', DPI.fmtScore(myDpi.meanRace)),
+            UI.statBlock('Quali Elo',
+              myDpi.qualiElo != null ? Math.round(myDpi.qualiElo) : '—',
+              'teammate H2H'),
+            UI.statBlock('Race Elo',
+              myDpi.raceElo != null ? Math.round(myDpi.raceElo) : '—',
+              'teammate finish H2H'),
+            UI.statBlock('DSC',
+              UI.el('span', { style: myDpi.meanDsc != null ? `color:${DPI.scoreColor(myDpi.meanDsc)}` : '' },
+                DPI.fmtScore(myDpi.meanDsc)),
+              'ridge-decomposed'),
+            UI.statBlock('Seasons', myDpi.seasons.length),
           ),
         ));
       }
@@ -85,12 +97,13 @@ const DriverView = {
         return UI.el('section', { class: 'card' },
           UI.h2({}, 'Season-by-season'),
           UI.table(
-            ['Year', 'Team', 'Pos', 'Points', 'Wins', 'DPI'],
+            ['Year', 'Team', 'Pos', 'Points', 'Wins', 'Shrunk DPI', 'Best 75%', 'qElo', 'DSC'],
             career.map(yr => {
               const team = yr.races[0]?.result.constructorId;
               const c = constructors.get(team);
               const fs = yr.finalStanding;
               const dr = dpiByYear.get(yr.year);
+              const dpiVal = dr?.shrunkOverall ?? dr?.meanOverall;
               return [
                 UI.el('a', { href: `#/season/${yr.year}` }, String(yr.year)),
                 UI.constructorLink(c),
@@ -98,8 +111,11 @@ const DriverView = {
                 { value: fs?.points ?? '—', class: 'pts' },
                 { value: fs?.wins ?? '—', class: 'pts' },
                 UI.el('span', { class: 'pts',
-                  style: dr?.meanOverall ? `color:${DPI.scoreColor(dr.meanOverall)};font-weight:700` : '' },
-                  DPI.fmtScore(dr?.meanOverall)),
+                  style: dpiVal != null ? `color:${DPI.scoreColor(dpiVal)};font-weight:700` : '' },
+                  DPI.fmtScore(dpiVal)),
+                { value: DPI.fmtScore(dr?.best75Overall), class: 'pts' },
+                { value: dr?.qualiElo != null ? Math.round(dr.qualiElo) : '—', class: 'mono' },
+                { value: DPI.fmtScore(dr?.dscScore), class: 'pts' },
               ];
             })
           )
@@ -115,7 +131,7 @@ const DriverView = {
         const data = career.map(yr => ({
           year: yr.year,
           points: yr.finalStanding?.points ?? 0,
-          dpi: dpiByYear.get(yr.year)?.meanOverall ?? null,
+          dpi: dpiByYear.get(yr.year)?.shrunkOverall ?? dpiByYear.get(yr.year)?.meanOverall ?? null,
         }));
         const labels = data.map(x => String(x.year));
         const points = data.map(x => x.points);

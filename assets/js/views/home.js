@@ -42,7 +42,7 @@ const HomeView = {
             const d = drivers.get(s.driverId);
             const c = constructors.get(s.constructorId);
             const dpiRow = dpiByDriver.get(s.driverId);
-            const dpiVal = dpiRow?.meanOverall;
+            const dpiVal = dpiRow?.shrunkOverall ?? dpiRow?.meanOverallAdj;
             return [
               { value: s.position, class: `pos ${UI.posClass(s.position)}` },
               UI.driverLink(d),
@@ -85,17 +85,20 @@ const HomeView = {
       );
       view.appendChild(lastRaceCard);
 
-      // Top DPI table
-      const topDpi = dpi.drivers.slice(0, 8);
+      // Top DPI table (sorted by shrunkOverall — the v2 recommended metric)
+      const topDpi = [...dpi.drivers]
+        .filter(d => d.shrunkOverall != null)
+        .sort((a, b) => b.shrunkOverall - a.shrunkOverall)
+        .slice(0, 8);
       const dpiCard = UI.el('section', { class: 'card' },
         UI.el('div', { style: 'display:flex;justify-content:space-between;align-items:baseline;' },
           UI.h2({}, `${year} Driver Performance Index`),
           UI.el('a', { href: `#/dpi/${year}`, class: 'muted' }, 'Full leaderboard + chart →'),
         ),
         UI.p({ class: 'muted' },
-          'A custom rating: car-adjusted (qualifying delta to teammate) + race progression (positions gained, weighted toward the front).'),
+          'DPI v2 — car-adjusted via teammate quali delta (40%) plus DNF-adjusted weighted positions gained (60%). Sprints fold in at 0.3 weight. Bayesian-shrunk for sample size.'),
         UI.table(
-          ['#', 'Driver', 'Team', 'Quali', 'Race', 'Overall'],
+          ['#', 'Driver', 'Team', 'Quali', 'Race', 'Shrunk DPI', 'qElo'],
           topDpi.map((d, i) => {
             const drv = drivers.get(d.driverId);
             const c = constructors.get(d.team);
@@ -104,9 +107,10 @@ const HomeView = {
               UI.driverLink(drv),
               UI.constructorLink(c),
               { value: DPI.fmtScore(d.meanQuali), class: 'pts' },
-              { value: DPI.fmtScore(d.meanRace), class: 'pts' },
-              UI.el('span', { style: `font-family:var(--mono);font-weight:700;color:${DPI.scoreColor(d.meanOverall)}` },
-                DPI.fmtScore(d.meanOverall)),
+              { value: DPI.fmtScore(d.meanRaceAdj), class: 'pts' },
+              UI.el('span', { style: `font-family:var(--mono);font-weight:700;color:${DPI.scoreColor(d.shrunkOverall)}` },
+                DPI.fmtScore(d.shrunkOverall)),
+              { value: d.qualiElo != null ? Math.round(d.qualiElo) : '—', class: 'mono' },
             ];
           })
         )

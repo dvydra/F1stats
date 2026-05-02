@@ -168,33 +168,64 @@ const RaceView = {
         if (!dpiRace) {
           return UI.el('section', { class: 'card' }, UI.p({}, 'No DPI breakdown available for this race.'));
         }
-        const sorted = [...dpiRace.entries].sort((a, b) => (b.overall ?? -1) - (a.overall ?? -1));
-        return UI.el('section', { class: 'card' },
+        const sorted = [...dpiRace.entries].sort((a, b) => (b.overallAdj ?? b.overall ?? -1) - (a.overallAdj ?? a.overall ?? -1));
+        const wrap = UI.el('section', { class: 'card' },
           UI.h2({}, 'DPI breakdown for this race'),
           UI.p({ class: 'muted' },
-            'Quali = (50 − teammate-delta% × 25), Racecraft = (50 + weighted positions gained × 25). Overall = 0.40·Quali + 0.60·Racecraft.'),
+            'Race rating uses DNF-adjusted positions gained — only counts gains over drivers who actually finished. Pit stops shown for context. Overall = 0.40·Quali + 0.60·Race.'),
           UI.table(
-            ['Driver', 'Team', 'Q delta', 'Q rating', 'Grid → Finish', 'Net gain', 'Race rating', 'Status', 'Overall'],
+            ['Driver', 'Team', 'Q Δ%', 'Q rating', 'Grid → Finish', 'Pit', 'Race (raw)', 'Race (adj)', 'Status', 'Overall'],
             sorted.map(e => {
               const d = drivers.get(e.driverId);
               const c = constructors.get(e.team);
               const gridFin = (e.grid != null && e.finish != null) ? `P${e.grid} → P${e.finish}` : '—';
+              const overallShown = e.overallAdj ?? e.overall;
               return [
                 UI.driverLink(d),
                 UI.constructorLink(c),
                 { value: DPI.fmtDelta(e.qualiDelta) + (e.qualiSession ? ` (${e.qualiSession})` : ''), class: 'mono' },
                 { value: DPI.fmtScore(e.qualiRating), class: 'pts' },
                 { value: gridFin, class: 'mono' },
-                { value: e.netGain != null ? e.netGain.toFixed(2) : '—', class: 'mono' },
+                { value: e.pitStops ?? '—', class: 'mono' },
                 { value: DPI.fmtScore(e.racecraft), class: 'pts' },
+                { value: DPI.fmtScore(e.racecraftAdj), class: 'pts' },
                 { value: e.statusKind, class: 'muted' },
                 UI.el('span', { class: 'pts',
-                  style: e.overall != null ? `color:${DPI.scoreColor(e.overall)};font-weight:700` : '' },
-                  DPI.fmtScore(e.overall)),
+                  style: overallShown != null ? `color:${DPI.scoreColor(overallShown)};font-weight:700` : '' },
+                  DPI.fmtScore(overallShown)),
               ];
             })
           )
         );
+        // Sprint breakdown if present
+        if (dpiRace.sprintEntries && dpiRace.sprintEntries.length) {
+          const sSorted = [...dpiRace.sprintEntries].sort((a, b) =>
+            (b.overallAdj ?? b.overall ?? -1) - (a.overallAdj ?? a.overall ?? -1));
+          wrap.appendChild(UI.h2({}, 'Sprint DPI breakdown'));
+          wrap.appendChild(UI.p({ class: 'muted' }, 'Same metric, applied to the sprint weekend. Counts at 0.3 weight in season aggregate.'));
+          wrap.appendChild(UI.table(
+            ['Driver', 'Team', 'Q Δ%', 'Q rating', 'Grid → Finish', 'Race (adj)', 'Status', 'Overall'],
+            sSorted.map(e => {
+              const d = drivers.get(e.driverId);
+              const c = constructors.get(e.team);
+              const gridFin = (e.grid != null && e.finish != null) ? `P${e.grid} → P${e.finish}` : '—';
+              const overallShown = e.overallAdj ?? e.overall;
+              return [
+                UI.driverLink(d),
+                UI.constructorLink(c),
+                { value: DPI.fmtDelta(e.qualiDelta) + (e.qualiSession ? ` (${e.qualiSession})` : ''), class: 'mono' },
+                { value: DPI.fmtScore(e.qualiRating), class: 'pts' },
+                { value: gridFin, class: 'mono' },
+                { value: DPI.fmtScore(e.racecraftAdj), class: 'pts' },
+                { value: e.statusKind, class: 'muted' },
+                UI.el('span', { class: 'pts',
+                  style: overallShown != null ? `color:${DPI.scoreColor(overallShown)};font-weight:700` : '' },
+                  DPI.fmtScore(overallShown)),
+              ];
+            })
+          ));
+        }
+        return wrap;
       }
     } catch (e) {
       root.replaceChildren(UI.errorBox('Failed to load race: ' + e.message));
