@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>F1 Stats — Browse Formula 1 history</title>
+  <meta name="description" content="Browse Formula 1 results by season, race, driver and team. Standings, lap charts, head-to-head comparisons." />
+  <link rel="preconnect" href="https://api.jolpi.ca" />
+  <link rel="stylesheet" href="assets/css/style.css" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ctext y='20' font-size='22'%3E%F0%9F%8F%8E%EF%B8%8F%3C/text%3E%3C/svg%3E" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="container header-inner">
+      <a href="#/" class="brand">
+        <span class="brand-mark">F1</span>
+        <span class="brand-name">Stats</span>
+      </a>
+      <nav class="primary-nav" id="primary-nav">
+        <a href="#/" data-route="home">Home</a>
+        <a href="#/seasons" data-route="seasons">Seasons</a>
+        <a href="#/drivers" data-route="drivers">Drivers</a>
+        <a href="#/constructors" data-route="constructors">Teams</a>
+        <a href="#/compare" data-route="compare">Compare</a>
+      </nav>
+      <form class="search" id="search-form" role="search">
+        <input id="search-input" type="search" placeholder="Search driver or team..." autocomplete="off" />
+        <div class="search-results" id="search-results" hidden></div>
+      </form>
+    </div>
+  </header>
+
+  <main id="app" class="container">
+    <div class="loading">Loading…</div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <p>Data via the <a href="https://github.com/jolpica/jolpica-f1" target="_blank" rel="noopener">Jolpica F1 API</a> (Ergast successor). Not affiliated with Formula 1.</p>
+    </div>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="assets/js/api.js"></script>
+  <script src="assets/js/views.js"></script>
+  <script src="assets/js/app.js"></script>
+</body>
+</html>
