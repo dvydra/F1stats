@@ -1,0 +1,12 @@
+# Raw data dump from f1db release — preprocessed into data/seasons + data/dpi
+data/raw/
+*.zip
+
+# OS / editor cruft
+.DS_Store
+.vscode/
+.idea/
+*.swp
+
+# Node/etc
+node_modules/
