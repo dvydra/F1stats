@@ -255,9 +255,13 @@ function crumbs(...items) {
 }
 
 function statBlock(label, value, sub) {
+  let renderedValue;
+  if (value == null) renderedValue = '—';
+  else if (value instanceof Node) renderedValue = value;
+  else renderedValue = String(value);
   return el('div', { class: 'stat' },
     el('div', { class: 'label' }, label),
-    el('div', { class: 'value' }, value == null ? '—' : String(value)),
+    el('div', { class: 'value' }, renderedValue),
     sub ? el('div', { class: 'muted', style: 'font-size:11px;margin-top:4px;' }, sub) : null
   );
 }
