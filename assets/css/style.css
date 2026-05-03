@@ -193,6 +193,27 @@ table.f1-table {
   margin-left: 1px;
   cursor: help;
 }
+/* Records-page topic nav strip */
+.records-nav {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  margin: 14px 0 6px;
+}
+.records-nav-link {
+  padding: 6px 12px;
+  border: 1px solid var(--border, #2a313a);
+  border-radius: 4px;
+  font-size: 12px;
+  text-decoration: none;
+  color: var(--text-dim);
+  background: var(--bg-elev-1, #14181d);
+}
+.records-nav-link:hover { color: var(--text); border-color: var(--accent-2, #1f8efa); }
+.records-nav-link.active {
+  color: #fff;
+  border-color: var(--accent, #e10600);
+  background: rgba(225, 6, 0, 0.1);
+}
+
 .partial-banner {
   background: rgba(225, 6, 0, 0.08);
   border-left: 3px solid var(--accent, #e10600);

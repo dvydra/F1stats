@@ -30,6 +30,11 @@ const routes = [
   { re: /^\/dpi\/(\d+)\/?$/, handler: (m) => DPISeasonView.render(root, m[1]) },
   { re: /^\/dpi\/?$/, handler: () => DPIExplainView.render(root) },
   { re: /^\/countries\/?$/, handler: () => CountriesView.render(root) },
+  { re: /^\/records\/([^\/]+)\/?$/, handler: (m) => RecordsView.render(root, m[1]) },
+  { re: /^\/records\/?$/, handler: () => RecordsView.render(root) },
+  { re: /^\/circuits\/?$/, handler: () => CircuitsListView.render(root) },
+  { re: /^\/circuit\/([^\/]+)\/?$/, handler: (m) => CircuitView.render(root, m[1]) },
+  { re: /^\/engines\/?$/, handler: () => EnginesView.render(root) },
 ];
 
 function dispatch() {
@@ -57,6 +62,9 @@ function highlightNav(hash) {
     else if (route === 'constructors') active = hash.startsWith('/constructors') || hash.startsWith('/constructor/');
     else if (route === 'compare') active = hash.startsWith('/compare');
     else if (route === 'countries') active = hash.startsWith('/countries');
+    else if (route === 'records') active = hash.startsWith('/records') ||
+      hash.startsWith('/circuits') || hash.startsWith('/circuit/') ||
+      hash.startsWith('/engines');
     a.classList.toggle('active', active);
   });
 }

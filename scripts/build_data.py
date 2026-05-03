@@ -1046,6 +1046,190 @@ def main():
     with open(OUT / "constructor-dsc.json", "w") as f:
         json.dump(constructor_dsc_out, f, separators=(",", ":"))
 
+    # ─── Records & curiosities bakes ──────────────────────────────────────────
+    # All sourced from the per-race results we already have in scope.
+
+    # Comebacks: top 300 grid → finish climbs, with DNF-aware adjusted Δ.
+    print("Baking comebacks…")
+    comebacks_out = []
+    for race in races:
+        rid = race["id"]; rs = results_by_race.get(rid, [])
+        if not rs: continue
+        finishers = {r["driverId"] for r in rs
+                     if r.get("positionNumber") is not None
+                     and (r.get("reasonRetired") is None or r.get("positionNumber") <= 30)}
+        sorted_grids = sorted({r.get("gridPositionNumber") for r in rs
+                               if r["driverId"] in finishers and r.get("gridPositionNumber")})
+        grid_rank = {g: i + 1 for i, g in enumerate(sorted_grids)}
+        for r in rs:
+            grid = r.get("gridPositionNumber"); finish = r.get("positionNumber")
+            if grid is None or finish is None: continue
+            if r.get("reasonRetired"): continue
+            delta = grid - finish
+            if delta < 5: continue
+            adj_grid = grid_rank.get(grid, grid) if r["driverId"] in finishers else grid
+            comebacks_out.append({
+                "year": race["year"], "round": race["round"], "raceId": race["id"],
+                "raceName": race.get("officialName"), "circuitId": race.get("circuitId"),
+                "driverId": r["driverId"], "constructorId": r["constructorId"],
+                "grid": grid, "finish": finish,
+                "delta": delta, "deltaAdj": adj_grid - finish,
+            })
+    comebacks_out.sort(key=lambda x: -x["delta"])
+    with open(OUT / "comebacks.json", "w") as f:
+        json.dump(comebacks_out[:300], f, separators=(",", ":"), ensure_ascii=False)
+
+    # Circuit stats: per-circuit, per-driver aggregates (top 80 by wins).
+    print("Baking circuit-stats…")
+    circ_drv = defaultdict(lambda: defaultdict(lambda: {
+        "starts": 0, "wins": 0, "podiums": 0, "poles": 0, "fl": 0, "dnf": 0,
+        "finishSum": 0, "finishN": 0, "years": set(),
+    }))
+    circ_race_count = defaultdict(int)
+    for race in races:
+        cid = race.get("circuitId")
+        rs = results_by_race.get(race["id"], [])
+        if not cid or not rs: continue
+        circ_race_count[cid] += 1
+        for r in rs:
+            agg = circ_drv[cid][r["driverId"]]
+            agg["starts"] += 1
+            agg["years"].add(race["year"])
+            pos = r.get("positionNumber")
+            if pos == 1: agg["wins"] += 1
+            if pos and pos <= 3: agg["podiums"] += 1
+            if r.get("polePosition"): agg["poles"] += 1
+            if r.get("fastestLap"): agg["fl"] += 1
+            if r.get("reasonRetired"):
+                agg["dnf"] += 1
+            elif pos is not None:
+                agg["finishSum"] += pos; agg["finishN"] += 1
+    circuit_stats_out = {}
+    circ_meta = {c["id"]: c for c in circuits}
+    for cid, drvs in circ_drv.items():
+        if circ_race_count[cid] < 3: continue
+        meta = circ_meta.get(cid, {})
+        rows = []
+        for did, a in drvs.items():
+            if a["starts"] < 2: continue
+            rows.append({
+                "driverId": did, "starts": a["starts"], "wins": a["wins"],
+                "podiums": a["podiums"], "poles": a["poles"], "fl": a["fl"],
+                "dnf": a["dnf"],
+                "meanFinish": round(a["finishSum"] / a["finishN"], 2) if a["finishN"] else None,
+                "yearsActive": sorted(a["years"]),
+            })
+        rows.sort(key=lambda x: (-x["wins"], -x["podiums"], -x["starts"]))
+        circuit_stats_out[cid] = {
+            "name": meta.get("name", cid),
+            "fullName": meta.get("fullName", meta.get("name", cid)),
+            "country": meta.get("countryId"),
+            "type": meta.get("type"),
+            "lat": meta.get("latitude"), "lng": meta.get("longitude"),
+            "totalRaces": circ_race_count[cid],
+            "drivers": rows[:80],
+        }
+    with open(OUT / "circuit-stats.json", "w") as f:
+        json.dump(circuit_stats_out, f, separators=(",", ":"), ensure_ascii=False)
+
+    # Pole → win conversion (drivers with ≥5 poles).
+    print("Baking pole-to-win…")
+    ptw_acc = defaultdict(lambda: {"poles": 0, "winsFromPole": 0})
+    for r in rr:
+        if r.get("polePosition"):
+            ptw_acc[r["driverId"]]["poles"] += 1
+            if r.get("positionNumber") == 1:
+                ptw_acc[r["driverId"]]["winsFromPole"] += 1
+    ptw_out = {}
+    for did, v in ptw_acc.items():
+        if v["poles"] < 5: continue
+        ptw_out[did] = {**v, "rate": round(v["winsFromPole"] / v["poles"], 4)}
+    with open(OUT / "pole-to-win.json", "w") as f:
+        json.dump(ptw_out, f, separators=(",", ":"))
+
+    # Per-year engine wins (uses engineManufacturerId from raw race results).
+    print("Baking engine-stats…")
+    eng_year_wins = defaultdict(lambda: defaultdict(int))
+    eng_year_starts = defaultdict(lambda: defaultdict(int))
+    for r in rr:
+        eid = r.get("engineManufacturerId")
+        y = race_year_by_id.get(r.get("raceId"))
+        if not eid or not y: continue
+        eng_year_starts[str(y)][eid] += 1
+        if r.get("positionNumber") == 1:
+            eng_year_wins[str(y)][eid] += 1
+    with open(OUT / "engine-stats.json", "w") as f:
+        json.dump({
+            "byYear": {y: dict(d) for y, d in eng_year_wins.items()},
+            "startsByYear": {y: dict(d) for y, d in eng_year_starts.items()},
+        }, f, separators=(",", ":"))
+
+    # Season drama: lead changes + clinch round.
+    print("Baking season-drama…")
+    drama_out = {}
+    for year_ in years:
+        season_races_chrono = sorted(by_year[year_], key=lambda r: r.get("round"))
+        if not season_races_chrono: continue
+        leader_seq = []
+        for race in season_races_chrono:
+            sts = sorted(drv_st_by_race.get(race["id"], []),
+                         key=lambda s: s.get("positionDisplayOrder", 9999))
+            if sts: leader_seq.append(sts[0]["driverId"])
+        lead_changes = sum(1 for i in range(1, len(leader_seq))
+                           if leader_seq[i] != leader_seq[i - 1])
+        final_st = sorted(season_drv_by_year.get(year_, []),
+                          key=lambda s: s.get("positionDisplayOrder", 9999))
+        final_champ = final_st[0]["driverId"] if final_st else None
+        clinch_round = None
+        if final_champ and season_races_chrono:
+            total_rounds = len(season_races_chrono)
+            for race in season_races_chrono:
+                sts = sorted(drv_st_by_race.get(race["id"], []),
+                             key=lambda s: s.get("positionDisplayOrder", 9999))
+                if not sts: continue
+                champ_pts = next((x["points"] for x in sts if x["driverId"] == final_champ), None)
+                second = next((x["points"] for x in sts if x["driverId"] != final_champ), None)
+                if champ_pts is None or second is None: continue
+                rounds_left = total_rounds - race["round"]
+                if champ_pts - second > rounds_left * 26:
+                    clinch_round = race["round"]; break
+        drama_out[str(year_)] = {
+            "leadChanges": lead_changes,
+            "clinchRound": clinch_round,
+            "totalRounds": len(season_races_chrono),
+            "completedRounds": len(leader_seq),
+        }
+    with open(OUT / "season-drama.json", "w") as f:
+        json.dump(drama_out, f, separators=(",", ":"))
+
+    # Dynasties — curated list, filtered to drivers actually present in our data.
+    print("Baking dynasties…")
+    DYNASTIES = [
+        ("andretti", "Andretti", ["mario-andretti","michael-andretti","marco-andretti","jeff-andretti"]),
+        ("hill", "Hill", ["graham-hill","damon-hill"]),
+        ("rosberg", "Rosberg", ["keke-rosberg","nico-rosberg"]),
+        ("verstappen", "Verstappen", ["jos-verstappen","max-verstappen"]),
+        ("schumacher", "Schumacher", ["michael-schumacher","ralf-schumacher","mick-schumacher"]),
+        ("fittipaldi", "Fittipaldi", ["emerson-fittipaldi","wilson-fittipaldi","christian-fittipaldi","pietro-fittipaldi"]),
+        ("stewart", "Stewart", ["jackie-stewart","jimmy-stewart","paul-stewart"]),
+        ("brabham", "Brabham", ["jack-brabham","geoff-brabham","david-brabham","gary-brabham"]),
+        ("magnussen", "Magnussen", ["jan-magnussen","kevin-magnussen"]),
+        ("villeneuve", "Villeneuve", ["gilles-villeneuve","jacques-villeneuve","jacques-villeneuve-sr"]),
+        ("piquet", "Piquet", ["nelson-piquet","nelson-piquet-jr"]),
+        ("lauda", "Lauda", ["niki-lauda","mathias-lauda"]),
+        ("senna", "Senna", ["ayrton-senna","bruno-senna"]),
+        ("bianchi", "Bianchi", ["jules-bianchi","lucien-bianchi","mauro-bianchi"]),
+        ("prost", "Prost", ["alain-prost","nicolas-prost"]),
+    ]
+    drv_ids = {d["id"] for d in slim_drivers}
+    dynasties_out = []
+    for did_, name, members in DYNASTIES:
+        valid = [m for m in members if m in drv_ids]
+        if len(valid) >= 2:
+            dynasties_out.append({"id": did_, "name": name, "members": valid})
+    with open(OUT / "dynasties.json", "w") as f:
+        json.dump(dynasties_out, f, separators=(",", ":"))
+
     # Manifest
     last_season_races = by_year[last_year]
     last_race = max(last_season_races, key=lambda r: (r.get("date") or ""))
