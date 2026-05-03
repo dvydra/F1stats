@@ -190,13 +190,23 @@ const DriverView = {
 
         const wrap = UI.div({});
 
-        // 1) Share of season's available points + Shrunk DPI on the same 0–100 axis.
+        // 1) Share of season's available points + Shrunk DPI on dual axes.
+        //    Points share spans 0–80%+; DPI clusters tightly around 50
+        //    (shrinkage + field-centering). Forcing them onto one scale
+        //    squashes the DPI line, so each gets its own auto-fit axis
+        //    with reference markers (50 for DPI, 0 for points).
+        const dpiObs = dpiVals.filter(v => v != null);
+        const dpiMin = dpiObs.length ? Math.min(40, Math.floor(Math.min(...dpiObs) - 2)) : 40;
+        const dpiMax = dpiObs.length ? Math.max(70, Math.ceil(Math.max(...dpiObs) + 2)) : 70;
+
         wrap.appendChild(card(
           'Points share vs driver skill',
-          'Red = championship points as a % of the season\'s available points (era-normalised). ' +
-          'Blue = Shrunk DPI on a 0–100 scale where 50 is field-average. ' +
-          'Big red-vs-blue gaps = car/driver mismatch — high red + low blue means a strong machine, ' +
-          'high blue + low red means the driver was let down by the car.',
+          'Red (left axis) = championship points as a % of the season\'s available points — ' +
+          'how much you actually scored, era-normalised. ' +
+          'Blue (right axis) = Shrunk DPI (50 = field-average); the dashed line marks 50. ' +
+          'Read the trajectories independently: a season where red soars while blue stays around 50 = ' +
+          'a strong machine carrying you; blue moving up while red stays flat = ' +
+          'driver outperforming the car.',
           make((canvas) => new Chart(canvas, {
             type: 'line',
             data: {
@@ -204,20 +214,48 @@ const DriverView = {
               datasets: [
                 { label: '% of season points', data: ptsPct,
                   borderColor: '#e10600', backgroundColor: '#e10600',
-                  tension: 0.2, spanGaps: true, pointRadius: 4 },
+                  tension: 0.2, spanGaps: true, pointRadius: 4,
+                  yAxisID: 'y' },
                 { label: 'Shrunk DPI', data: dpiVals,
                   borderColor: '#1f8efa', backgroundColor: '#1f8efa',
-                  tension: 0.2, spanGaps: true, pointRadius: 4 },
+                  tension: 0.2, spanGaps: true, pointRadius: 4,
+                  yAxisID: 'y1' },
               ],
             },
             options: baseOpts({
               scales: {
-                y: { min: 0, max: 100,
-                  ticks: { color: '#9aa3af', callback: v => v + (v <= 100 ? '' : '') },
+                y: { type: 'linear', position: 'left',
+                  min: 0, suggestedMax: 100,
+                  ticks: { color: '#e10600', callback: v => v + '%' },
                   grid: { color: '#2a313a' },
-                  title: { display: true, text: '% / DPI (0–100)', color: '#9aa3af' } },
+                  title: { display: true, text: '% of season points', color: '#e10600' } },
+                y1: { type: 'linear', position: 'right',
+                  min: dpiMin, max: dpiMax,
+                  ticks: { color: '#1f8efa' },
+                  grid: { display: false },
+                  title: { display: true, text: 'Shrunk DPI (50 = field avg)', color: '#1f8efa' } },
               },
             }),
+            // Dashed reference line at DPI=50 (field average).
+            plugins: [{
+              id: 'dpiAvgLine',
+              beforeDatasetsDraw(chart) {
+                const y1 = chart.scales.y1;
+                if (!y1) return;
+                const { ctx, chartArea } = chart;
+                const yPx = y1.getPixelForValue(50);
+                if (yPx < chartArea.top || yPx > chartArea.bottom) return;
+                ctx.save();
+                ctx.strokeStyle = 'rgba(31,142,250,0.35)';
+                ctx.setLineDash([4, 4]);
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(chartArea.left, yPx);
+                ctx.lineTo(chartArea.right, yPx);
+                ctx.stroke();
+                ctx.restore();
+              },
+            }],
           })),
         ));
 
