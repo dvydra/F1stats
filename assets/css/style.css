@@ -186,6 +186,14 @@ table.f1-table {
 .f1-table.sortable th.th-sort.sorted { color: var(--text); }
 .f1-table.sortable th.th-sort.sorted .th-arrow { color: var(--accent, #e10600); }
 
+/* In-progress-season marker. Small accent-coloured asterisk after the year. */
+.partial-star {
+  color: var(--accent, #e10600);
+  font-weight: 700;
+  margin-left: 1px;
+  cursor: help;
+}
+
 /* Country flag — small, monochrome-friendly, sits before the name */
 .flag {
   display: inline-block;

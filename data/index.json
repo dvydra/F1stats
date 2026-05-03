@@ -176,5 +176,315 @@
     "2024": 652,
     "2025": 648,
     "2026": 83
+  },
+  "seasonRounds": {
+    "1950": {
+      "completed": 7,
+      "scheduled": 7
+    },
+    "1951": {
+      "completed": 8,
+      "scheduled": 8
+    },
+    "1952": {
+      "completed": 8,
+      "scheduled": 8
+    },
+    "1953": {
+      "completed": 9,
+      "scheduled": 9
+    },
+    "1954": {
+      "completed": 9,
+      "scheduled": 9
+    },
+    "1955": {
+      "completed": 7,
+      "scheduled": 7
+    },
+    "1956": {
+      "completed": 8,
+      "scheduled": 8
+    },
+    "1957": {
+      "completed": 8,
+      "scheduled": 8
+    },
+    "1958": {
+      "completed": 11,
+      "scheduled": 11
+    },
+    "1959": {
+      "completed": 9,
+      "scheduled": 9
+    },
+    "1960": {
+      "completed": 10,
+      "scheduled": 10
+    },
+    "1961": {
+      "completed": 8,
+      "scheduled": 8
+    },
+    "1962": {
+      "completed": 9,
+      "scheduled": 9
+    },
+    "1963": {
+      "completed": 10,
+      "scheduled": 10
+    },
+    "1964": {
+      "completed": 10,
+      "scheduled": 10
+    },
+    "1965": {
+      "completed": 10,
+      "scheduled": 10
+    },
+    "1966": {
+      "completed": 9,
+      "scheduled": 9
+    },
+    "1967": {
+      "completed": 11,
+      "scheduled": 11
+    },
+    "1968": {
+      "completed": 12,
+      "scheduled": 12
+    },
+    "1969": {
+      "completed": 11,
+      "scheduled": 11
+    },
+    "1970": {
+      "completed": 13,
+      "scheduled": 13
+    },
+    "1971": {
+      "completed": 11,
+      "scheduled": 11
+    },
+    "1972": {
+      "completed": 12,
+      "scheduled": 12
+    },
+    "1973": {
+      "completed": 15,
+      "scheduled": 15
+    },
+    "1974": {
+      "completed": 15,
+      "scheduled": 15
+    },
+    "1975": {
+      "completed": 14,
+      "scheduled": 14
+    },
+    "1976": {
+      "completed": 16,
+      "scheduled": 16
+    },
+    "1977": {
+      "completed": 17,
+      "scheduled": 17
+    },
+    "1978": {
+      "completed": 16,
+      "scheduled": 16
+    },
+    "1979": {
+      "completed": 15,
+      "scheduled": 15
+    },
+    "1980": {
+      "completed": 14,
+      "scheduled": 14
+    },
+    "1981": {
+      "completed": 15,
+      "scheduled": 15
+    },
+    "1982": {
+      "completed": 16,
+      "scheduled": 16
+    },
+    "1983": {
+      "completed": 15,
+      "scheduled": 15
+    },
+    "1984": {
+      "completed": 16,
+      "scheduled": 16
+    },
+    "1985": {
+      "completed": 16,
+      "scheduled": 16
+    },
+    "1986": {
+      "completed": 16,
+      "scheduled": 16
+    },
+    "1987": {
+      "completed": 16,
+      "scheduled": 16
+    },
+    "1988": {
+      "completed": 16,
+      "scheduled": 16
+    },
+    "1989": {
+      "completed": 16,
+      "scheduled": 16
+    },
+    "1990": {
+      "completed": 16,
+      "scheduled": 16
+    },
+    "1991": {
+      "completed": 16,
+      "scheduled": 16
+    },
+    "1992": {
+      "completed": 16,
+      "scheduled": 16
+    },
+    "1993": {
+      "completed": 16,
+      "scheduled": 16
+    },
+    "1994": {
+      "completed": 16,
+      "scheduled": 16
+    },
+    "1995": {
+      "completed": 17,
+      "scheduled": 17
+    },
+    "1996": {
+      "completed": 16,
+      "scheduled": 16
+    },
+    "1997": {
+      "completed": 17,
+      "scheduled": 17
+    },
+    "1998": {
+      "completed": 16,
+      "scheduled": 16
+    },
+    "1999": {
+      "completed": 16,
+      "scheduled": 16
+    },
+    "2000": {
+      "completed": 17,
+      "scheduled": 17
+    },
+    "2001": {
+      "completed": 17,
+      "scheduled": 17
+    },
+    "2002": {
+      "completed": 17,
+      "scheduled": 17
+    },
+    "2003": {
+      "completed": 16,
+      "scheduled": 16
+    },
+    "2004": {
+      "completed": 18,
+      "scheduled": 18
+    },
+    "2005": {
+      "completed": 19,
+      "scheduled": 19
+    },
+    "2006": {
+      "completed": 18,
+      "scheduled": 18
+    },
+    "2007": {
+      "completed": 17,
+      "scheduled": 17
+    },
+    "2008": {
+      "completed": 18,
+      "scheduled": 18
+    },
+    "2009": {
+      "completed": 17,
+      "scheduled": 17
+    },
+    "2010": {
+      "completed": 19,
+      "scheduled": 19
+    },
+    "2011": {
+      "completed": 19,
+      "scheduled": 19
+    },
+    "2012": {
+      "completed": 20,
+      "scheduled": 20
+    },
+    "2013": {
+      "completed": 19,
+      "scheduled": 19
+    },
+    "2014": {
+      "completed": 19,
+      "scheduled": 19
+    },
+    "2015": {
+      "completed": 19,
+      "scheduled": 19
+    },
+    "2016": {
+      "completed": 21,
+      "scheduled": 21
+    },
+    "2017": {
+      "completed": 20,
+      "scheduled": 20
+    },
+    "2018": {
+      "completed": 21,
+      "scheduled": 21
+    },
+    "2019": {
+      "completed": 21,
+      "scheduled": 21
+    },
+    "2020": {
+      "completed": 17,
+      "scheduled": 17
+    },
+    "2021": {
+      "completed": 22,
+      "scheduled": 22
+    },
+    "2022": {
+      "completed": 22,
+      "scheduled": 22
+    },
+    "2023": {
+      "completed": 22,
+      "scheduled": 22
+    },
+    "2024": {
+      "completed": 24,
+      "scheduled": 24
+    },
+    "2025": {
+      "completed": 24,
+      "scheduled": 24
+    },
+    "2026": {
+      "completed": 3,
+      "scheduled": 22
+    }
   }
 }

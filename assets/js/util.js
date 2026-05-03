@@ -268,7 +268,38 @@ function statBlock(label, value, sub) {
 
 function clearChildren(node) { while (node.firstChild) node.removeChild(node.firstChild); }
 
+// In-progress (current) season detection. Manifest carries
+// `seasonRounds: { '2026': { completed: 3, scheduled: 22 }, ... }`.
+function isPartialSeason(year, manifest) {
+  const r = manifest?.seasonRounds?.[String(year)];
+  if (!r) return false;
+  return r.completed < r.scheduled;
+}
+
+// Render a year cell. For in-progress seasons, append a small * with a
+// tooltip explaining what it means. Returns a DOM Node so it composes
+// with sortable tables (data-sort attr keeps numeric ordering).
+function yearLabel(year, manifest, opts = {}) {
+  const partial = isPartialSeason(year, manifest);
+  const r = manifest?.seasonRounds?.[String(year)];
+  const txt = String(year);
+  const node = el('span', { 'data-sort': txt }, txt);
+  if (partial) {
+    const star = el('span',
+      { class: 'partial-star',
+        title: r ? `In progress — ${r.completed} of ${r.scheduled} rounds completed` :
+                   'Season in progress' },
+      '*');
+    node.appendChild(star);
+  }
+  if (opts.href) {
+    return el('a', { href: opts.href, 'data-sort': txt }, node);
+  }
+  return node;
+}
+
 window.UI = { $, $$, el, div, span, a, h1, h2, h3, p, table, loading, errorBox,
               posClass, driverLink, constructorLink, raceLink, fmtDate,
               crumbs, statBlock, clearChildren,
-              flag, flagSpan, countryName, countryISO };
+              flag, flagSpan, countryName, countryISO,
+              isPartialSeason, yearLabel };

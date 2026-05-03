@@ -663,6 +663,7 @@ def main():
     season_dsc_teams = {}    # year -> {teamId: beta}
     season_aggregates = {}   # year -> [aggregate dicts]
     season_max_points_by_year = {}  # year -> int (era-aware ceiling)
+    season_rounds_by_year = {}      # year -> {completed, scheduled}
 
     for year in years:
         season_races = sorted(by_year[year], key=lambda r: r["round"])
@@ -791,6 +792,10 @@ def main():
                         default=0)
             season_max_points += r_max + s_max
         season_max_points_by_year[year] = season_max_points
+        season_rounds_by_year[year] = {
+            "completed": sum(1 for r in race_payload if r.get("results")),
+            "scheduled": len(race_payload),
+        }
 
         season_payload = {
             "year": year,
@@ -1049,6 +1054,7 @@ def main():
             "totalDrivers": len(slim_drivers),
             "totalConstructors": len(slim_constructors),
             "seasonMaxPoints": {str(y): n for y, n in season_max_points_by_year.items()},
+            "seasonRounds": {str(y): r for y, r in season_rounds_by_year.items()},
         }, f, separators=(",", ":"))
 
     print(f"\nDone. {len(years)} seasons baked. DPI v2 metrics: shrunkOverall, "

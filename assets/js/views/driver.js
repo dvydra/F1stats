@@ -18,8 +18,9 @@ const DriverView = {
       ));
 
       // Loading rest in parallel
-      const career = await F1Data.driverCareer(driverId);
-      const dpiAll = await F1Data.dpiAll();
+      const [career, dpiAll, manifest] = await Promise.all([
+        F1Data.driverCareer(driverId), F1Data.dpiAll(), F1Data.manifest(),
+      ]);
 
       const flagLg = UI.flagSpan(d.nationality);
       const country = UI.countryName(d.nationality);
@@ -143,7 +144,7 @@ const DriverView = {
               const dr = dpiByYear.get(yr.year);
               const dpiVal = dr?.shrunkOverall ?? dr?.meanOverall;
               return [
-                UI.el('a', { href: `#/season/${yr.year}` }, String(yr.year)),
+                UI.yearLabel(yr.year, manifest, { href: `#/season/${yr.year}` }),
                 UI.constructorLink(c),
                 { value: fs?.position ?? '—', class: 'mono' },
                 { value: fs?.points ?? '—', class: 'pts' },
@@ -171,7 +172,9 @@ const DriverView = {
           points: yr.finalStanding?.points ?? 0,
           dpi: dpiByYear.get(yr.year)?.shrunkOverall ?? dpiByYear.get(yr.year)?.meanOverall ?? null,
         }));
-        const labels = data.map(x => String(x.year));
+        // Append * to in-progress season labels in the chart axis too.
+        const labels = data.map(x =>
+          UI.isPartialSeason(x.year, manifest) ? `${x.year}*` : String(x.year));
         const points = data.map(x => x.points);
         const dpiVals = data.map(x => x.dpi);
 
