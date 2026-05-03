@@ -206,6 +206,19 @@ const CompareView = {
       careerPctA, careerPctB));
     compareCard.appendChild(statRow('Championships', da.totalChampionshipWins, db.totalChampionshipWins));
     compareCard.appendChild(statRow('Best championship', da.bestChampionshipPosition, db.bestChampionshipPosition, false));
+
+    // Career-mean championship position (lower is better).
+    const avgPosFor = (career) => {
+      const ps = career.map(yr => yr.finalStanding?.position).filter(p => p != null);
+      return ps.length ? ps.reduce((a, b) => a + b, 0) / ps.length : null;
+    };
+    const avgPosA = avgPosFor(careerA);
+    const avgPosB = avgPosFor(careerB);
+    compareCard.appendChild(statRow('Avg championship pos',
+      avgPosA != null ? avgPosA.toFixed(1) : null,
+      avgPosB != null ? avgPosB.toFixed(1) : null,
+      false,  // lower is better
+      avgPosA, avgPosB));
     compareCard.appendChild(statRow('Shrunk DPI',
       dpiA?.shrunkOverall != null ? dpiA.shrunkOverall.toFixed(1) : null,
       dpiB?.shrunkOverall != null ? dpiB.shrunkOverall.toFixed(1) : null));
@@ -252,6 +265,20 @@ const CompareView = {
     chartCard.appendChild(UI.el('div', { class: 'chart-wrap tall' }, canvas));
     view.appendChild(chartCard);
 
+    // Championship position by season — y-axis reversed so P1 is at the top.
+    const posA = allYears.map(y => yearsA.get(y)?.finalStanding?.position ?? null);
+    const posB = allYears.map(y => yearsB.get(y)?.finalStanding?.position ?? null);
+    const posMax = Math.max(
+      ...posA.filter(p => p != null), ...posB.filter(p => p != null), 10);
+
+    const posCard = UI.el('section', { class: 'card' });
+    posCard.appendChild(UI.h2({}, 'Championship position by season'));
+    posCard.appendChild(UI.p({ class: 'muted' },
+      'End-of-season championship rank. Lower = better; P1 on top.'));
+    const posCanvas = UI.el('canvas');
+    posCard.appendChild(UI.el('div', { class: 'chart-wrap tall' }, posCanvas));
+    view.appendChild(posCard);
+
     // DPI by season chart (shrunk overall — v2)
     const dpiByYearA = new Map((dpiA?.seasons || []).map(s => [s.year, s.shrunkOverall ?? s.meanOverall]));
     const dpiByYearB = new Map((dpiB?.seasons || []).map(s => [s.year, s.shrunkOverall ?? s.meanOverall]));
@@ -295,6 +322,31 @@ const CompareView = {
                     y: { min: 0, max: 100, ticks: { color: '#9aa3af', callback: v => v + '%' },
                          grid: { color: '#2a313a' },
                          title: { display: true, text: '% of season max', color: '#9aa3af' } } } },
+      });
+      new Chart(posCanvas, {
+        type: 'line',
+        data: {
+          labels: allYears.map(String),
+          datasets: [
+            { label: da.lastName || da.name, data: posA, borderColor: '#e10600',
+              backgroundColor: '#e10600', tension: 0.2, spanGaps: true, pointRadius: 4 },
+            { label: db.lastName || db.name, data: posB, borderColor: '#1f8efa',
+              backgroundColor: '#1f8efa', tension: 0.2, spanGaps: true, pointRadius: 4 },
+          ],
+        },
+        options: { responsive: true, maintainAspectRatio: false,
+          plugins: {
+            legend: { labels: { color: '#e6e9ee' } },
+            tooltip: { callbacks: {
+              label: (ctx) => `${ctx.dataset.label}: P${ctx.parsed.y}`,
+            } },
+          },
+          scales: { x: { ticks: { color: '#9aa3af' }, grid: { color: '#2a313a' } },
+                    y: { reverse: true, min: 1, max: posMax,
+                         ticks: { color: '#9aa3af', stepSize: 1, precision: 0,
+                                  callback: v => 'P' + v },
+                         grid: { color: '#2a313a' },
+                         title: { display: true, text: 'Championship position', color: '#9aa3af' } } } },
       });
       new Chart(dpiCanvas, {
         type: 'line',

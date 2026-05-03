@@ -22,6 +22,14 @@ const DriverView = {
       const dpiAll = await F1Data.dpiAll();
 
       const flag = d.nationality ? d.nationality.toUpperCase().slice(0, 3) : '';
+
+      // Career mean championship position across all seasons raced.
+      const seasonPositions = career.map(yr => yr.finalStanding?.position)
+                                    .filter(p => p != null);
+      const avgChampPos = seasonPositions.length
+        ? seasonPositions.reduce((a, b) => a + b, 0) / seasonPositions.length
+        : null;
+
       view.appendChild(UI.el('section', { class: 'hero' },
         UI.h1({}, d.fullName || d.name),
         UI.p({}, [d.abbreviation, flag, d.dateOfBirth ? `b. ${d.dateOfBirth}` : null,
@@ -34,6 +42,9 @@ const DriverView = {
           UI.statBlock('Career points', d.totalPoints),
           UI.statBlock('Championships', d.totalChampionshipWins,
             d.bestChampionshipPosition ? `best #${d.bestChampionshipPosition}` : ''),
+          UI.statBlock('Avg championship pos',
+            avgChampPos != null ? avgChampPos.toFixed(1) : '—',
+            seasonPositions.length ? `${seasonPositions.length} seasons` : ''),
         )
       ));
 
