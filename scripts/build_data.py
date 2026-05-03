@@ -460,11 +460,21 @@ def main():
         pos = s.get("positionNumber")
         if did and pos is not None:
             driver_champ_positions[did].append(pos)
+    # DNF tally: any race entry whose reasonRetired is set counts as a DNF.
+    driver_dnf = defaultdict(lambda: {"starts": 0, "dnf": 0})
+    for r in rr:
+        did = r.get("driverId")
+        if not did: continue
+        driver_dnf[did]["starts"] += 1
+        if r.get("reasonRetired"):
+            driver_dnf[did]["dnf"] += 1
     cname = {c["id"]: c.get("name") for c in slim_constructors}
     search_index = []
     for d in slim_drivers:
         cps = driver_champ_positions.get(d["id"], [])
         avg_champ = round(sum(cps) / len(cps), 2) if cps else None
+        dn = driver_dnf.get(d["id"], {"starts": 0, "dnf": 0})
+        dpct = (100 * dn["dnf"] / dn["starts"]) if dn["starts"] else None
         search_index.append({
             "id": d["id"],
             "name": d.get("fullName") or d.get("name"),
@@ -477,6 +487,8 @@ def main():
             "teams": [cname.get(t, t) for t in sorted(driver_team_ids.get(d["id"], []))],
             "avgChampPos": avg_champ,
             "champSeasons": len(cps),
+            "dnf": dn["dnf"],
+            "dnfPct": round(dpct, 2) if dpct is not None else None,
         })
     with open(OUT / "driver-search.json", "w") as f:
         json.dump(search_index, f, separators=(",", ":"), ensure_ascii=False)

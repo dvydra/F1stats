@@ -1,7 +1,7 @@
 // Driver profile: career stats, season-by-season trajectory, points vs DPI chart.
 
 const DriverView = {
-  async render(root, driverId) {
+  async render(root, driverId, tab) {
     root.replaceChildren(UI.loading('Loading driver…'));
     try {
       const [drivers, constructors] = await Promise.all([
@@ -52,10 +52,57 @@ const DriverView = {
         )
       ));
 
-      // DPI summary
+      // DPI is now a tab (the default). Seasons, Points-vs-DPI chart, and
+      // All races are also tabs. Selected tab is persisted in the URL hash:
+      //   #/driver/:id            → DPI tab (default)
+      //   #/driver/:id/seasons    → Season history
+      //   #/driver/:id/chart      → Points vs DPI chart
+      //   #/driver/:id/races      → All races
       const myDpi = dpiAll.find(x => x.driverId === driverId);
-      if (myDpi && (myDpi.meanOverall != null || myDpi.qualiElo != null)) {
-        view.appendChild(UI.el('section', { class: 'card' },
+      const hasDpi = myDpi && (myDpi.meanOverall != null || myDpi.qualiElo != null);
+
+      const defs = [];
+      if (hasDpi) defs.push({ id: 'dpi', label: 'DPI' });
+      defs.push({ id: 'seasons', label: 'Season history' });
+      defs.push({ id: 'chart', label: 'Points vs DPI' });
+      defs.push({ id: 'races', label: 'All races' });
+
+      const validTabs = new Set(defs.map(d => d.id));
+      let cur = validTabs.has(tab) ? tab : defs[0].id;
+
+      const tabs = UI.el('div', { class: 'tabs' });
+      const content = UI.div({});
+
+      const renderTab = () => {
+        UI.clearChildren(content);
+        $$('button', tabs).forEach(b => b.classList.toggle('active', b.dataset.tab === cur));
+        if (cur === 'dpi') content.appendChild(dpiTab());
+        else if (cur === 'seasons') content.appendChild(seasonsTab());
+        else if (cur === 'chart') content.appendChild(chartTab());
+        else if (cur === 'races') content.appendChild(racesTab());
+      };
+      for (const dd of defs) {
+        tabs.appendChild(UI.el('button', { 'data-tab': dd.id,
+          onclick: () => {
+            cur = dd.id;
+            // Update hash without re-triggering full route render. Default
+            // tab gets the bare URL so it shareably resolves to the same view.
+            const next = (dd.id === defs[0].id)
+              ? `#/driver/${driverId}`
+              : `#/driver/${driverId}/${dd.id}`;
+            if (location.hash !== next) {
+              history.replaceState(null, '', next);
+            }
+            renderTab();
+          } }, dd.label));
+      }
+      view.appendChild(tabs);
+      view.appendChild(content);
+      root.replaceChildren(view);
+      renderTab();
+
+      function dpiTab() {
+        return UI.el('section', { class: 'card' },
           UI.h2({}, 'Driver Performance Index — v2'),
           UI.p({ class: 'muted' },
             'Career metrics. Shrunk DPI is the recommended summary; Elo and DSC are orthogonal lenses.'),
@@ -80,33 +127,8 @@ const DriverView = {
               'ridge-decomposed'),
             UI.statBlock('Seasons', myDpi.seasons.length),
           ),
-        ));
+        );
       }
-
-      // Tabs: Seasons | Per-race DPI/points | Career races
-      const tabs = UI.el('div', { class: 'tabs' });
-      const content = UI.div({});
-      const defs = [
-        { id: 'seasons', label: 'Season history' },
-        { id: 'chart', label: 'Points vs DPI' },
-        { id: 'races', label: 'All races' },
-      ];
-      let cur = 'seasons';
-      const renderTab = () => {
-        UI.clearChildren(content);
-        $$('button', tabs).forEach(b => b.classList.toggle('active', b.dataset.tab === cur));
-        if (cur === 'seasons') content.appendChild(seasonsTab());
-        else if (cur === 'chart') content.appendChild(chartTab());
-        else if (cur === 'races') content.appendChild(racesTab());
-      };
-      for (const dd of defs) {
-        tabs.appendChild(UI.el('button', { 'data-tab': dd.id,
-          onclick: () => { cur = dd.id; renderTab(); } }, dd.label));
-      }
-      view.appendChild(tabs);
-      view.appendChild(content);
-      root.replaceChildren(view);
-      renderTab();
 
       function seasonsTab() {
         const dpiByYear = new Map((myDpi?.seasons || []).map(s => [s.year, s]));
@@ -246,6 +268,8 @@ const DriversListView = {
         bestChamp: d.bestChampionshipPosition,
         points: d.totalPoints || 0,
         avgChamp: s?.avgChampPos ?? null,
+        dnf: s?.dnf ?? null,
+        dnfPct: s?.dnfPct ?? null,
         shrunkDpi: dpi?.shrunkOverall ?? null,
         qElo: dpi?.qualiElo ?? null,
         rElo: dpi?.raceElo ?? null,
@@ -312,6 +336,10 @@ const DriversListView = {
         fmt: (r) => r.avgChamp != null ? r.avgChamp.toFixed(1) : '—',
         sort: (a, b) => (a.avgChamp ?? 99) - (b.avgChamp ?? 99) },
       { key: 'points',    label: 'Pts',     align: 'right' },
+      { key: 'dnf',       label: 'DNF',     align: 'right' },
+      { key: 'dnfPct',    label: 'DNF%',    align: 'right',
+        fmt: (r) => r.dnfPct != null ? r.dnfPct.toFixed(1) + '%' : '—',
+        sort: (a, b) => (b.dnfPct ?? -Infinity) - (a.dnfPct ?? -Infinity) },
       { key: 'shrunkDpi', label: 'DPI',     align: 'right',
         fmt: (r) => r.shrunkDpi != null
           ? UI.el('span', { style: `color:${DPI.scoreColor(r.shrunkDpi)};font-weight:700` },
