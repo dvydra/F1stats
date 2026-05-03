@@ -63,6 +63,193 @@ const DPISeasonView = {
       chartCard.appendChild(UI.el('div', { class: 'chart-wrap tall' }, canvas));
       view.appendChild(chartCard);
 
+      // ───────────── Per-driver chart pack (sorted bars per metric) ─────────────
+      // For every driver in the season, plot the same metric across the field.
+      // Bars are sorted within each chart so the leader is left-most and you
+      // can read the whole grid at a glance.
+      const driversInSeason = dpi.drivers.filter(d => d.driverId);
+      const labelFor = (d) => {
+        const drv = drivers.get(d.driverId);
+        return drv?.abbreviation || drv?.lastName || d.driverId;
+      };
+      const teamColors = ['#e10600', '#1f8efa', '#7bd389', '#ffd166', '#a986ff',
+                          '#ff7a45', '#13c2c2', '#eb2f96', '#52c41a', '#faad14',
+                          '#2f54eb', '#fa541c'];
+      const colorByTeam = new Map();
+      let colorIdx = 0;
+      const colorFor = (teamId) => {
+        if (!teamId) return '#666';
+        if (!colorByTeam.has(teamId)) {
+          colorByTeam.set(teamId, teamColors[colorIdx++ % teamColors.length]);
+        }
+        return colorByTeam.get(teamId);
+      };
+
+      const chartPack = UI.el('section', { class: 'card' });
+      chartPack.appendChild(UI.h2({}, `Every ${year} driver, by metric`));
+      chartPack.appendChild(UI.p({ class: 'muted' },
+        'Bars are sorted within each chart — leader on the left. ' +
+        'Bar colour groups by team so you can spot the teammate gap.'));
+      const chartGrid = UI.el('div', { class: 'small-multiples' });
+      chartPack.appendChild(chartGrid);
+      view.appendChild(chartPack);
+
+      const miniCharts = [];
+      const addChart = (title, data, opts = {}) => {
+        const wrap = UI.el('div', { class: 'small-multiple' });
+        wrap.appendChild(UI.el('h3', {}, title));
+        const canvas = UI.el('canvas');
+        wrap.appendChild(UI.el('div', { class: 'chart-wrap medium' }, canvas));
+        chartGrid.appendChild(wrap);
+        miniCharts.push(() => {
+          new Chart(canvas, {
+            type: 'bar',
+            data: {
+              labels: data.map(d => d.label),
+              datasets: [{
+                label: title,
+                data: data.map(d => d.value),
+                backgroundColor: data.map(d => d.color),
+                borderWidth: 0,
+              }],
+            },
+            options: {
+              indexAxis: 'y',
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                legend: { display: false },
+                tooltip: { callbacks: {
+                  label: (ctx) => opts.tooltip
+                    ? opts.tooltip(ctx.raw, data[ctx.dataIndex])
+                    : `${ctx.parsed.x}`,
+                } },
+              },
+              scales: {
+                x: { ...opts.x,
+                     ticks: { color: '#9aa3af', ...(opts.x?.ticks || {}) },
+                     grid: { color: '#2a313a' } },
+                y: { ticks: { color: '#9aa3af', font: { size: 10 } },
+                     grid: { display: false } },
+              },
+            },
+          });
+        });
+      };
+
+      const sortedBy = (key, opts = {}) => {
+        const arr = driversInSeason
+          .filter(d => d[key] != null)
+          .map(d => ({
+            label: labelFor(d),
+            value: opts.transform ? opts.transform(d[key], d) : d[key],
+            color: colorFor(d.team),
+            team: d.team,
+            driver: d,
+          }))
+          .sort((a, b) => opts.asc ? (a.value - b.value) : (b.value - a.value));
+        return arr;
+      };
+
+      // Total points (from standings, which already includes sprint pts).
+      const ptsRows = driversInSeason
+        .map(d => ({
+          label: labelFor(d),
+          value: standings.get(d.driverId)?.points || 0,
+          color: colorFor(d.team),
+        }))
+        .sort((a, b) => b.value - a.value);
+      addChart(`Championship points`, ptsRows, {
+        x: { title: { display: true, text: 'Points', color: '#9aa3af' } },
+        tooltip: (v) => `${v} pts`,
+      });
+
+      // Final championship position (lower is better).
+      const posRows = driversInSeason
+        .map(d => ({
+          label: labelFor(d),
+          value: standings.get(d.driverId)?.position || null,
+          color: colorFor(d.team),
+        }))
+        .filter(r => r.value != null)
+        .sort((a, b) => a.value - b.value);
+      addChart(`Championship position`, posRows, {
+        x: { title: { display: true, text: 'Position (P1 = best)', color: '#9aa3af' },
+             reverse: true },
+        tooltip: (v) => `P${v}`,
+      });
+
+      // Shrunk DPI — coloured by score for emphasis.
+      const dpiRows = driversInSeason
+        .filter(d => d.shrunkOverall != null)
+        .map(d => ({
+          label: labelFor(d),
+          value: d.shrunkOverall,
+          color: DPI.scoreColor(d.shrunkOverall),
+        }))
+        .sort((a, b) => b.value - a.value);
+      addChart('Shrunk DPI (50 = field avg)', dpiRows, {
+        x: { min: 0, max: 100,
+             title: { display: true, text: 'Shrunk DPI', color: '#9aa3af' } },
+        tooltip: (v) => v.toFixed(1),
+      });
+
+      // Quali Elo (career-cumulative; persists across teams).
+      const eloRows = driversInSeason
+        .filter(d => d.qualiElo != null)
+        .map(d => ({
+          label: labelFor(d),
+          value: Math.round(d.qualiElo),
+          color: colorFor(d.team),
+        }))
+        .sort((a, b) => b.value - a.value);
+      addChart('Career qualifying Elo', eloRows, {
+        x: { title: { display: true, text: 'Elo (career, K=24)', color: '#9aa3af' } },
+        tooltip: (v) => `Elo ${v}`,
+      });
+
+      // Quali Δ% vs teammate (negative = faster; we flip so positive is faster).
+      const deltaRows = driversInSeason
+        .filter(d => d.meanQualiDelta != null)
+        .map(d => ({
+          label: labelFor(d),
+          value: -d.meanQualiDelta,  // flip: positive = beat teammate
+          color: -d.meanQualiDelta >= 0 ? '#7bd389' : '#cc4d4d',
+        }))
+        .sort((a, b) => b.value - a.value);
+      addChart('Quali Δ% vs teammate (faster →)', deltaRows, {
+        x: { title: { display: true, text: '% advantage', color: '#9aa3af' },
+             ticks: { callback: v => v.toFixed(2) + '%' } },
+        tooltip: (v) => `${v >= 0 ? '+' : ''}${v.toFixed(3)}%`,
+      });
+
+      // DPI components — three small bars (quali, racecraft, finish), sorted
+      // by overall to keep visual ordering consistent across the trio.
+      const sortedByOverall = driversInSeason
+        .filter(d => d.meanOverallAdj != null)
+        .sort((a, b) => b.meanOverallAdj - a.meanOverallAdj);
+      ['meanQuali', 'meanRaceAdj', 'meanFinish'].forEach((key) => {
+        const title = ({
+          meanQuali: 'DPI · Quali component',
+          meanRaceAdj: 'DPI · Racecraft component',
+          meanFinish: 'DPI · Finish component',
+        })[key];
+        const rows = sortedByOverall
+          .filter(d => d[key] != null)
+          .map(d => ({
+            label: labelFor(d),
+            value: d[key],
+            color: DPI.scoreColor(d[key]),
+          }));
+        addChart(title, rows, {
+          x: { min: 0, max: 100,
+               title: { display: true, text: 'Score', color: '#9aa3af' } },
+          tooltip: (v) => v.toFixed(1),
+        });
+      });
+
+      setTimeout(() => miniCharts.forEach(fn => fn()), 10);
+
       // Leaderboard with all v2 metrics
       view.appendChild(UI.el('section', { class: 'card' },
         UI.el('div', { style: 'display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;' },

@@ -312,6 +312,29 @@ button.btn.ghost:hover { border-color: var(--accent); }
 /* Charts */
 .chart-wrap { position: relative; height: 360px; }
 .chart-wrap.tall { height: 460px; }
+.chart-wrap.medium { height: 420px; }
+
+/* Small-multiples grid for the per-season "every driver, by metric" pack */
+.small-multiples {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+  gap: 18px;
+  margin-top: 14px;
+}
+.small-multiple {
+  background: var(--bg-elev-1, #14181d);
+  border: 1px solid var(--border, #2a313a);
+  border-radius: 6px;
+  padding: 12px 14px;
+}
+.small-multiple h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
 
 /* Loading & error */
 .loading, .error {
