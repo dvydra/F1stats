@@ -19,8 +19,12 @@ const ConstructorView = {
       ));
 
       view.appendChild(UI.el('section', { class: 'hero' },
-        UI.h1({}, c.fullName || c.name),
-        UI.p({}, [c.country?.toUpperCase(),
+        UI.h1({},
+          UI.flag(c.country)
+            ? UI.el('span', { class: 'flag flag-lg' }, UI.flag(c.country))
+            : null,
+          c.fullName || c.name),
+        UI.p({}, [UI.countryName(c.country) || c.country,
                   c.totalRaceEntries ? `${c.totalRaceEntries} race entries` : null,
                   c.bestChampionshipPosition ? `best #${c.bestChampionshipPosition}` : null
                  ].filter(Boolean).join(' · ')),
@@ -188,7 +192,11 @@ const ConstructorsListView = {
       { key: 'name',       label: 'Team',   align: 'left',
         fmt: (r) => UI.el('a', { href: `#/constructor/${r.id}` }, r.name) },
       { key: 'country',    label: 'Country', align: 'left',
-        fmt: (r) => r.country ? r.country.toUpperCase() : '—' },
+        fmt: (r) => r.country
+          ? UI.el('span', { title: UI.countryName(r.country) || r.country },
+                  UI.flag(r.country) || (UI.countryISO(r.country) || '—'))
+          : '—',
+        sort: (a, b) => (UI.countryName(a.country) || '').localeCompare(UI.countryName(b.country) || '') },
       { key: 'years',      label: 'Years',  align: 'left',
         fmt: (r) => r.firstYear ? `${r.firstYear}–${r.lastYear}` : '—',
         sort: (a, b) => (b.firstYear || 0) - (a.firstYear || 0) },

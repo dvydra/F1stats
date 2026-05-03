@@ -21,7 +21,8 @@ const DriverView = {
       const career = await F1Data.driverCareer(driverId);
       const dpiAll = await F1Data.dpiAll();
 
-      const flag = d.nationality ? d.nationality.toUpperCase().slice(0, 3) : '';
+      const flagLg = UI.flagSpan(d.nationality);
+      const country = UI.countryName(d.nationality);
 
       // Career mean championship position across all seasons raced.
       const seasonPositions = career.map(yr => yr.finalStanding?.position)
@@ -31,8 +32,11 @@ const DriverView = {
         : null;
 
       view.appendChild(UI.el('section', { class: 'hero' },
-        UI.h1({}, d.fullName || d.name),
-        UI.p({}, [d.abbreviation, flag, d.dateOfBirth ? `b. ${d.dateOfBirth}` : null,
+        UI.h1({},
+          flagLg ? UI.el('span', { class: 'flag flag-lg' }, UI.flag(d.nationality)) : null,
+          d.fullName || d.name),
+        UI.p({}, [d.abbreviation, country,
+                  d.dateOfBirth ? `b. ${d.dateOfBirth}` : null,
                   d.permanentNumber ? `#${d.permanentNumber}` : null].filter(Boolean).join(' · ')),
         UI.el('div', { class: 'stat-grid', style: 'margin-top:14px;' },
           UI.statBlock('Race starts', d.totalRaceStarts),
@@ -287,7 +291,11 @@ const DriversListView = {
       { key: 'name',      label: 'Driver',  align: 'left',
         fmt: (r) => UI.el('a', { href: `#/driver/${r.id}` }, r.name) },
       { key: 'nat',       label: 'Nat',     align: 'left',
-        fmt: (r) => r.nat ? r.nat.slice(0, 3).toUpperCase() : '—' },
+        fmt: (r) => r.nat
+          ? UI.el('span', { title: UI.countryName(r.nat) || r.nat },
+                  UI.flag(r.nat) || (UI.countryISO(r.nat) || '—'))
+          : '—',
+        sort: (a, b) => (UI.countryName(a.nat) || '').localeCompare(UI.countryName(b.nat) || '') },
       { key: 'years',     label: 'Years',   align: 'left',
         fmt: (r) => r.firstYear ? `${r.firstYear}–${r.lastYear}` : '—',
         sort: (a, b) => (b.firstYear || 0) - (a.firstYear || 0) },

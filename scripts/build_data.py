@@ -520,6 +520,74 @@ def main():
     with open(OUT / "constructor-search.json", "w") as f:
         json.dump(cstr_search, f, separators=(",", ":"), ensure_ascii=False)
 
+    # Country leaderboard — wins, podiums, home wins (driver nationality
+    # matches the circuit's country), driver/constructor titles.
+    drv_nat = {d["id"]: d.get("nationality") for d in slim_drivers}
+    cons_nat = {c["id"]: c.get("country") for c in slim_constructors}
+    circ_country = {c["id"]: c.get("countryId") for c in circuits}
+    race_circuit = {r["id"]: r.get("circuitId") for r in races}
+    race_gp = {r["id"]: r.get("grandPrixId") for r in races}
+
+    cagg = defaultdict(lambda: {
+        "drivers": set(), "constructors": set(),
+        "starts": 0, "wins": 0, "podiums": 0, "poles": 0, "fastestLaps": 0,
+        "homeWins": 0, "homePodiums": 0,
+        "driverTitles": 0, "constructorTitles": 0,
+        "raceHosts": set(),
+    })
+    for d in slim_drivers:
+        nat = d.get("nationality")
+        if nat and (d.get("totalRaceStarts") or 0) > 0:
+            cagg[nat]["drivers"].add(d["id"])
+            cagg[nat]["driverTitles"] += d.get("totalChampionshipWins") or 0
+    for c in slim_constructors:
+        cn = c.get("country")
+        if cn and (c.get("totalRaceStarts") or 0) > 0:
+            cagg[cn]["constructors"].add(c["id"])
+            cagg[cn]["constructorTitles"] += c.get("totalChampionshipWins") or 0
+    for race in races:
+        rid = race["id"]
+        cc = circ_country.get(race.get("circuitId"))
+        if cc: cagg[cc]["raceHosts"].add(race.get("grandPrixId") or rid)
+        for r in results_by_race.get(rid, []):
+            nat = drv_nat.get(r.get("driverId"))
+            if not nat: continue
+            cagg[nat]["starts"] += 1
+            pos = r.get("positionNumber")
+            if pos == 1: cagg[nat]["wins"] += 1
+            if pos and pos <= 3: cagg[nat]["podiums"] += 1
+            if r.get("polePosition"): cagg[nat]["poles"] += 1
+            if r.get("fastestLap"): cagg[nat]["fastestLaps"] += 1
+            if cc == nat:
+                if pos == 1: cagg[nat]["homeWins"] += 1
+                if pos and pos <= 3: cagg[nat]["homePodiums"] += 1
+        for r in sprint_results_by_race.get(rid, []):
+            nat = drv_nat.get(r.get("driverId"))
+            if not nat: continue
+            pos = r.get("positionNumber")
+            if pos == 1: cagg[nat]["wins"] += 1
+            if pos and pos <= 3: cagg[nat]["podiums"] += 1
+            if cc == nat:
+                if pos == 1: cagg[nat]["homeWins"] += 1
+                if pos and pos <= 3: cagg[nat]["homePodiums"] += 1
+
+    countries_out = []
+    for slug, a in cagg.items():
+        if not a["drivers"] and not a["constructors"]: continue
+        countries_out.append({
+            "id": slug,
+            "drivers": len(a["drivers"]), "constructors": len(a["constructors"]),
+            "starts": a["starts"], "wins": a["wins"], "podiums": a["podiums"],
+            "poles": a["poles"], "fastestLaps": a["fastestLaps"],
+            "homeWins": a["homeWins"], "homePodiums": a["homePodiums"],
+            "driverTitles": a["driverTitles"],
+            "constructorTitles": a["constructorTitles"],
+            "raceHosts": len(a["raceHosts"]),
+        })
+    countries_out.sort(key=lambda x: -x["wins"])
+    with open(OUT / "countries.json", "w") as f:
+        json.dump(countries_out, f, separators=(",", ":"), ensure_ascii=False)
+
     with open(OUT / "grands-prix.json", "w") as f:
         json.dump([{"id": g["id"], "name": g.get("name"),
                     "fullName": g.get("fullName"), "country": g.get("countryId")}

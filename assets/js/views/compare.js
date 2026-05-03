@@ -52,7 +52,9 @@ function makeDriverPicker(searchIndex, current, labelFor) {
       const teams = (d.teams || []).slice(0, 3).join(', ') + (d.teams.length > 3 ? '…' : '');
       const row = UI.el('div', { class: 'driver-picker-item' + (i === activeIdx ? ' active' : ''),
         onmousedown: (e) => { e.preventDefault(); pick(d); } },
-        UI.el('div', { class: 'name' }, d.name,
+        UI.el('div', { class: 'name' },
+          UI.flagSpan(d.nat),
+          d.name,
           d.abbr ? UI.el('span', { class: 'muted', style: 'margin-left:6px' }, d.abbr) : null),
         UI.el('div', { class: 'sub muted' }, `${yrs} · ${d.starts} starts${teams ? ' · ' + teams : ''}`),
       );

@@ -186,6 +186,19 @@ table.f1-table {
 .f1-table.sortable th.th-sort.sorted { color: var(--text); }
 .f1-table.sortable th.th-sort.sorted .th-arrow { color: var(--accent, #e10600); }
 
+/* Country flag — small, monochrome-friendly, sits before the name */
+.flag {
+  display: inline-block;
+  margin-right: 6px;
+  font-size: 0.95em;
+  line-height: 1;
+  vertical-align: -1px;
+  /* Force colour-emoji rendering even when the parent uses a mono stack */
+  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji",
+               "Twemoji Mozilla", sans-serif;
+}
+.flag-lg { font-size: 1.4em; margin-right: 8px; }
+
 /* All-time drivers table */
 .f1-table.all-time th.right, .f1-table.all-time td.right { text-align: right; }
 .f1-table.all-time th.sortable { cursor: pointer; user-select: none; }

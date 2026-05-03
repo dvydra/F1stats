@@ -3,6 +3,75 @@
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
+// f1db country slug → { iso: alpha-2, name: human }. Covers every nationality
+// present in current data (drivers + constructors).
+const COUNTRY = {
+  argentina: { iso: 'AR', name: 'Argentina' },
+  australia: { iso: 'AU', name: 'Australia' },
+  austria: { iso: 'AT', name: 'Austria' },
+  belgium: { iso: 'BE', name: 'Belgium' },
+  brazil: { iso: 'BR', name: 'Brazil' },
+  canada: { iso: 'CA', name: 'Canada' },
+  chile: { iso: 'CL', name: 'Chile' },
+  china: { iso: 'CN', name: 'China' },
+  colombia: { iso: 'CO', name: 'Colombia' },
+  czechia: { iso: 'CZ', name: 'Czechia' },
+  denmark: { iso: 'DK', name: 'Denmark' },
+  'east-germany': { iso: 'DE', name: 'East Germany' },
+  estonia: { iso: 'EE', name: 'Estonia' },
+  finland: { iso: 'FI', name: 'Finland' },
+  france: { iso: 'FR', name: 'France' },
+  germany: { iso: 'DE', name: 'Germany' },
+  'hong-kong': { iso: 'HK', name: 'Hong Kong' },
+  hungary: { iso: 'HU', name: 'Hungary' },
+  india: { iso: 'IN', name: 'India' },
+  indonesia: { iso: 'ID', name: 'Indonesia' },
+  ireland: { iso: 'IE', name: 'Ireland' },
+  israel: { iso: 'IL', name: 'Israel' },
+  italy: { iso: 'IT', name: 'Italy' },
+  japan: { iso: 'JP', name: 'Japan' },
+  liechtenstein: { iso: 'LI', name: 'Liechtenstein' },
+  malaysia: { iso: 'MY', name: 'Malaysia' },
+  mexico: { iso: 'MX', name: 'Mexico' },
+  monaco: { iso: 'MC', name: 'Monaco' },
+  morocco: { iso: 'MA', name: 'Morocco' },
+  netherlands: { iso: 'NL', name: 'Netherlands' },
+  'new-zealand': { iso: 'NZ', name: 'New Zealand' },
+  poland: { iso: 'PL', name: 'Poland' },
+  portugal: { iso: 'PT', name: 'Portugal' },
+  rhodesia: { iso: 'ZW', name: 'Rhodesia' },
+  russia: { iso: 'RU', name: 'Russia' },
+  'south-africa': { iso: 'ZA', name: 'South Africa' },
+  spain: { iso: 'ES', name: 'Spain' },
+  sweden: { iso: 'SE', name: 'Sweden' },
+  switzerland: { iso: 'CH', name: 'Switzerland' },
+  thailand: { iso: 'TH', name: 'Thailand' },
+  'united-kingdom': { iso: 'GB', name: 'United Kingdom' },
+  'united-states-of-america': { iso: 'US', name: 'United States' },
+  uruguay: { iso: 'UY', name: 'Uruguay' },
+  venezuela: { iso: 'VE', name: 'Venezuela' },
+  zimbabwe: { iso: 'ZW', name: 'Zimbabwe' },
+};
+
+// Emoji flag for a country slug — uses regional-indicator code points.
+function flag(slug) {
+  const c = COUNTRY[slug];
+  if (!c) return '';
+  const A = 0x1F1E6 - 'A'.charCodeAt(0);
+  return String.fromCodePoint(A + c.iso.charCodeAt(0)) +
+         String.fromCodePoint(A + c.iso.charCodeAt(1));
+}
+
+function countryName(slug) { return COUNTRY[slug]?.name || ''; }
+function countryISO(slug) { return COUNTRY[slug]?.iso || ''; }
+
+// Inline flag span — `aria-hidden` so screen readers skip the duplicate.
+function flagSpan(slug) {
+  const f = flag(slug);
+  if (!f) return null;
+  return el('span', { class: 'flag', 'aria-hidden': 'true', title: countryName(slug) }, f);
+}
+
 function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
@@ -47,7 +116,13 @@ function table(headers, rows, opts = {}) {
   function cellComparable(cell) {
     if (cell == null) return null;
     let raw;
-    if (cell.nodeType) raw = (cell.textContent || '').trim();
+    if (cell.nodeType) {
+      // Honour `data-sort` so callers (e.g. driverLink) can supply the raw
+      // sort key and we don't end up sorting on flag emoji or formatting.
+      const ds = cell.dataset?.sort
+        ?? cell.querySelector?.('[data-sort]')?.dataset?.sort;
+      raw = ds ?? (cell.textContent || '').trim();
+    }
     else if (typeof cell === 'object' && 'value' in cell) raw = cell.value;
     else raw = cell;
     if (raw == null) return null;
@@ -146,13 +221,16 @@ function posClass(pos) {
 function driverLink(driver, label) {
   if (!driver) return el('span', {}, label || '—');
   const txt = label || driver.name || driver.fullName || driver.id;
-  return el('a', { href: `#/driver/${driver.id}` }, txt);
+  // data-sort lets sortable-table compare on the name only, ignoring the flag.
+  return el('a', { href: `#/driver/${driver.id}`, 'data-sort': txt },
+    flagSpan(driver.nationality), txt);
 }
 
 function constructorLink(c, label) {
   if (!c) return el('span', {}, label || '—');
   const txt = label || c.name || c.id;
-  return el('a', { href: `#/constructor/${c.id}` }, txt);
+  return el('a', { href: `#/constructor/${c.id}`, 'data-sort': txt },
+    flagSpan(c.country), txt);
 }
 
 function raceLink(year, round, label) {
@@ -188,4 +266,5 @@ function clearChildren(node) { while (node.firstChild) node.removeChild(node.fir
 
 window.UI = { $, $$, el, div, span, a, h1, h2, h3, p, table, loading, errorBox,
               posClass, driverLink, constructorLink, raceLink, fmtDate,
-              crumbs, statBlock, clearChildren };
+              crumbs, statBlock, clearChildren,
+              flag, flagSpan, countryName, countryISO };

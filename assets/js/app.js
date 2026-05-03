@@ -29,6 +29,7 @@ const routes = [
   { re: /^\/compare\/?$/, handler: () => CompareView.render(root) },
   { re: /^\/dpi\/(\d+)\/?$/, handler: (m) => DPISeasonView.render(root, m[1]) },
   { re: /^\/dpi\/?$/, handler: () => DPIExplainView.render(root) },
+  { re: /^\/countries\/?$/, handler: () => CountriesView.render(root) },
 ];
 
 function dispatch() {
@@ -55,6 +56,7 @@ function highlightNav(hash) {
     else if (route === 'drivers') active = hash.startsWith('/drivers') || hash.startsWith('/driver/');
     else if (route === 'constructors') active = hash.startsWith('/constructors') || hash.startsWith('/constructor/');
     else if (route === 'compare') active = hash.startsWith('/compare');
+    else if (route === 'countries') active = hash.startsWith('/countries');
     a.classList.toggle('active', active);
   });
 }
@@ -75,12 +77,14 @@ async function buildSearchIndex() {
     drivers: drivers.map(d => ({
       id: d.id,
       name: d.fullName || d.name,
+      nat: d.nationality,
       starts: d.totalRaceStarts || 0,
       hay: ((d.fullName || '') + ' ' + (d.name || '') + ' ' + (d.firstName || '') + ' ' + (d.lastName || '') + ' ' + (d.abbreviation || '')).toLowerCase(),
     })),
     constructors: constructors.map(c => ({
       id: c.id,
       name: c.fullName || c.name,
+      country: c.country,
       wins: c.totalRaceWins || 0,
       hay: ((c.fullName || '') + ' ' + (c.name || '')).toLowerCase(),
     })),
@@ -121,6 +125,7 @@ function initSearch() {
       for (const d of dr) {
         results.appendChild(UI.el('a', { href: `#/driver/${d.id}`,
           onclick: () => { results.hidden = true; input.value = ''; } },
+          UI.flagSpan(d.nat),
           d.name + (d.starts ? ` · ${d.starts} starts` : '')));
       }
     }
@@ -128,7 +133,8 @@ function initSearch() {
       results.appendChild(UI.el('div', { class: 'group-label' }, 'Teams'));
       for (const c of cs) {
         results.appendChild(UI.el('a', { href: `#/constructor/${c.id}`,
-          onclick: () => { results.hidden = true; input.value = ''; } }, c.name));
+          onclick: () => { results.hidden = true; input.value = ''; } },
+          UI.flagSpan(c.country), c.name));
       }
     }
     if (!dr.length && !cs.length) {
