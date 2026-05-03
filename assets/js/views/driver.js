@@ -65,7 +65,6 @@ const DriverView = {
       const defs = [];
       if (hasDpi) defs.push({ id: 'dpi', label: 'DPI' });
       defs.push({ id: 'seasons', label: 'Season history' });
-      defs.push({ id: 'chart', label: 'Points vs DPI' });
       defs.push({ id: 'races', label: 'All races' });
 
       const validTabs = new Set(defs.map(d => d.id));
@@ -79,7 +78,6 @@ const DriverView = {
         $$('button', tabs).forEach(b => b.classList.toggle('active', b.dataset.tab === cur));
         if (cur === 'dpi') content.appendChild(dpiTab());
         else if (cur === 'seasons') content.appendChild(seasonsTab());
-        else if (cur === 'chart') content.appendChild(chartTab());
         else if (cur === 'races') content.appendChild(racesTab());
       };
       for (const dd of defs) {
@@ -133,21 +131,238 @@ const DriverView = {
 
       function seasonsTab() {
         const dpiByYear = new Map((myDpi?.seasons || []).map(s => [s.year, s]));
-        return UI.el('section', { class: 'card' },
+        const seasonMax = manifest.seasonMaxPoints || {};
+
+        // Year axis = years the driver actually raced.
+        const years = career.map(y => y.year);
+        const labels = years.map(y =>
+          UI.isPartialSeason(y, manifest) ? `${y}*` : String(y));
+
+        // Per-year derived series.
+        const ptsPct = years.map(y => {
+          const fs = career.find(c => c.year === y).finalStanding;
+          const max = seasonMax[String(y)];
+          return (fs?.points != null && max) ? (100 * fs.points / max) : null;
+        });
+        const dpiVals     = years.map(y => dpiByYear.get(y)?.shrunkOverall ?? null);
+        const quali       = years.map(y => dpiByYear.get(y)?.meanQuali ?? null);
+        const racecraft   = years.map(y => dpiByYear.get(y)?.meanRaceAdj ?? null);
+        const finish      = years.map(y => dpiByYear.get(y)?.meanFinish ?? null);
+        const champPos    = years.map(y => career.find(c => c.year === y).finalStanding?.position ?? null);
+        const qualiDelta  = years.map(y => {
+          const d = dpiByYear.get(y)?.meanQualiDelta;
+          return d != null ? -d : null;  // flip so positive = beat teammate
+        });
+        const tmRate      = years.map(y => {
+          const s = dpiByYear.get(y);
+          if (!s || !s.teammateRaces) return null;
+          return 100 * s.teammateBeats / s.teammateRaces;
+        });
+        const qElo        = years.map(y => dpiByYear.get(y)?.qualiElo ?? null);
+        const rElo        = years.map(y => dpiByYear.get(y)?.raceElo ?? null);
+        const champPosMax = Math.max(...champPos.filter(p => p != null), 5);
+
+        // Shared chart axis defaults.
+        const xCfg = { ticks: { color: '#9aa3af' }, grid: { color: '#2a313a' } };
+        const baseOpts = (extra = {}) => ({
+          responsive: true, maintainAspectRatio: false,
+          plugins: {
+            legend: { labels: { color: '#e6e9ee' } },
+            ...(extra.plugins || {}),
+          },
+          scales: { x: xCfg, ...(extra.scales || {}) },
+        });
+
+        const card = (title, blurb, canvas) =>
+          UI.el('section', { class: 'card' },
+            UI.h2({}, title),
+            blurb ? UI.p({ class: 'muted' }, blurb) : null,
+            UI.el('div', { class: 'chart-wrap tall' }, canvas));
+
+        // Defer chart construction so the canvases are in the DOM first.
+        const charts = [];
+        const make = (build) => {
+          const canvas = UI.el('canvas');
+          charts.push(() => build(canvas));
+          return canvas;
+        };
+        setTimeout(() => charts.forEach(fn => fn()), 10);
+
+        const wrap = UI.div({});
+
+        // 1) Share of season's available points + Shrunk DPI on the same 0–100 axis.
+        wrap.appendChild(card(
+          'Points share vs driver skill',
+          'Red = championship points as a % of the season\'s available points (era-normalised). ' +
+          'Blue = Shrunk DPI on a 0–100 scale where 50 is field-average. ' +
+          'Big red-vs-blue gaps = car/driver mismatch — high red + low blue means a strong machine, ' +
+          'high blue + low red means the driver was let down by the car.',
+          make((canvas) => new Chart(canvas, {
+            type: 'line',
+            data: {
+              labels,
+              datasets: [
+                { label: '% of season points', data: ptsPct,
+                  borderColor: '#e10600', backgroundColor: '#e10600',
+                  tension: 0.2, spanGaps: true, pointRadius: 4 },
+                { label: 'Shrunk DPI', data: dpiVals,
+                  borderColor: '#1f8efa', backgroundColor: '#1f8efa',
+                  tension: 0.2, spanGaps: true, pointRadius: 4 },
+              ],
+            },
+            options: baseOpts({
+              scales: {
+                y: { min: 0, max: 100,
+                  ticks: { color: '#9aa3af', callback: v => v + (v <= 100 ? '' : '') },
+                  grid: { color: '#2a313a' },
+                  title: { display: true, text: '% / DPI (0–100)', color: '#9aa3af' } },
+              },
+            }),
+          })),
+        ));
+
+        // 2) DPI components per season — stacked bar with weighted contributions.
+        wrap.appendChild(card(
+          'DPI components by season',
+          'How the overall DPI breaks down each year: 30% Quali + 40% Racecraft + 30% Finish. ' +
+          'Tall stacks = strong overall; top-heavy = anchored by finishes; bottom-heavy = quali-led.',
+          make((canvas) => new Chart(canvas, {
+            type: 'bar',
+            data: {
+              labels,
+              datasets: [
+                { label: 'Quali (×0.30)',
+                  data: quali.map(v => v == null ? null : v * 0.30),
+                  backgroundColor: '#1f8efa', stack: 'dpi' },
+                { label: 'Racecraft (×0.40)',
+                  data: racecraft.map(v => v == null ? null : v * 0.40),
+                  backgroundColor: '#7bd389', stack: 'dpi' },
+                { label: 'Finish (×0.30)',
+                  data: finish.map(v => v == null ? null : v * 0.30),
+                  backgroundColor: '#ffd166', stack: 'dpi' },
+              ],
+            },
+            options: baseOpts({
+              scales: {
+                y: { stacked: true, min: 0, max: 100,
+                  ticks: { color: '#9aa3af' }, grid: { color: '#2a313a' },
+                  title: { display: true, text: 'DPI (weighted)', color: '#9aa3af' } },
+                x: { ...xCfg, stacked: true },
+              },
+            }),
+          })),
+        ));
+
+        // 3) Championship position by season — inverted y, P1 on top.
+        wrap.appendChild(card(
+          'Championship position by season',
+          'End-of-season standings rank. Lower is better — P1 sits on top.',
+          make((canvas) => new Chart(canvas, {
+            type: 'line',
+            data: {
+              labels,
+              datasets: [{
+                label: 'Championship pos',
+                data: champPos,
+                borderColor: '#e10600', backgroundColor: '#e10600',
+                tension: 0.2, spanGaps: true, pointRadius: 5,
+              }],
+            },
+            options: baseOpts({
+              plugins: { legend: { display: false } },
+              scales: {
+                y: { reverse: true, min: 1, max: champPosMax,
+                  ticks: { color: '#9aa3af', stepSize: 1, precision: 0,
+                           callback: v => 'P' + v },
+                  grid: { color: '#2a313a' },
+                  title: { display: true, text: 'Championship position', color: '#9aa3af' } },
+              },
+            }),
+          })),
+        ));
+
+        // 4) Teammate quali pace + H2H rate.
+        wrap.appendChild(card(
+          'Teammate qualifying head-to-head',
+          'Yellow bar = mean qualifying lap-time advantage over teammate (positive = faster). ' +
+          'Green dot = % of teammate quali sessions won.',
+          make((canvas) => new Chart(canvas, {
+            data: {
+              labels,
+              datasets: [
+                { type: 'bar', label: 'Quali Δ% vs teammate',
+                  data: qualiDelta,
+                  backgroundColor: qualiDelta.map(v =>
+                    v == null ? '#666' : v >= 0 ? '#ffd166' : '#cc4d4d'),
+                  yAxisID: 'y' },
+                { type: 'line', label: 'Quali H2H win rate',
+                  data: tmRate,
+                  borderColor: '#7bd389', backgroundColor: '#7bd389',
+                  tension: 0.2, spanGaps: true, pointRadius: 4,
+                  yAxisID: 'y1' },
+              ],
+            },
+            options: baseOpts({
+              scales: {
+                y: { position: 'left',
+                  ticks: { color: '#ffd166', callback: v => v.toFixed(2) + '%' },
+                  grid: { color: '#2a313a' },
+                  title: { display: true, text: 'Δ% vs teammate (faster →)', color: '#ffd166' } },
+                y1: { position: 'right', min: 0, max: 100,
+                  ticks: { color: '#7bd389', callback: v => v + '%' },
+                  grid: { display: false },
+                  title: { display: true, text: 'H2H win rate', color: '#7bd389' } },
+              },
+            }),
+          })),
+        ));
+
+        // 5) Quali Elo + Race Elo trajectory.
+        wrap.appendChild(card(
+          'Teammate Elo trajectory',
+          'Cumulative Elo from teammate head-to-heads, K=24 starting from 1500. ' +
+          'Persists across team changes — solves the "beating Hamilton vs beating a rookie" problem.',
+          make((canvas) => new Chart(canvas, {
+            type: 'line',
+            data: {
+              labels,
+              datasets: [
+                { label: 'Quali Elo', data: qElo,
+                  borderColor: '#1f8efa', backgroundColor: '#1f8efa',
+                  tension: 0.2, spanGaps: true, pointRadius: 4 },
+                { label: 'Race Elo',  data: rElo,
+                  borderColor: '#e10600', backgroundColor: '#e10600',
+                  tension: 0.2, spanGaps: true, pointRadius: 4 },
+              ],
+            },
+            options: baseOpts({
+              scales: {
+                y: { ticks: { color: '#9aa3af' }, grid: { color: '#2a313a' },
+                  title: { display: true, text: 'Elo', color: '#9aa3af' } },
+              },
+            }),
+          })),
+        ));
+
+        // 6) Season-by-season table — keeps the tabular drill-down.
+        wrap.appendChild(UI.el('section', { class: 'card' },
           UI.h2({}, 'Season-by-season'),
           UI.table(
-            ['Year', 'Team', 'Pos', 'Points', 'Wins', 'Shrunk DPI', 'Best 75%', 'qElo', 'DSC'],
+            ['Year', 'Team', 'Pos', 'Points', 'Pts %', 'Wins', 'Shrunk DPI', 'Best 75%', 'qElo', 'DSC'],
             career.map(yr => {
               const team = yr.races[0]?.result.constructorId;
               const c = constructors.get(team);
               const fs = yr.finalStanding;
               const dr = dpiByYear.get(yr.year);
               const dpiVal = dr?.shrunkOverall ?? dr?.meanOverall;
+              const max = seasonMax[String(yr.year)];
+              const pct = (fs?.points != null && max) ? (100 * fs.points / max) : null;
               return [
                 UI.yearLabel(yr.year, manifest, { href: `#/season/${yr.year}` }),
                 UI.constructorLink(c),
                 { value: fs?.position ?? '—', class: 'mono' },
                 { value: fs?.points ?? '—', class: 'pts' },
+                { value: pct != null ? pct.toFixed(1) + '%' : '—', class: 'pts' },
                 { value: fs?.wins ?? '—', class: 'pts' },
                 UI.el('span', { class: 'pts',
                   style: dpiVal != null ? `color:${DPI.scoreColor(dpiVal)};font-weight:700` : '' },
@@ -158,56 +373,8 @@ const DriverView = {
               ];
             })
           )
-        );
-      }
+        ));
 
-      function chartTab() {
-        const wrap = UI.el('section', { class: 'card' });
-        wrap.appendChild(UI.h2({}, 'Season points vs DPI'));
-        wrap.appendChild(UI.p({ class: 'muted' },
-          "Both metrics by season. Points (red bars) show what the driver scored. DPI (blue line) is car-controlled; gaps reveal seasons where the driver outperformed or was let down by the machinery."));
-        const dpiByYear = new Map((myDpi?.seasons || []).map(s => [s.year, s]));
-        const data = career.map(yr => ({
-          year: yr.year,
-          points: yr.finalStanding?.points ?? 0,
-          dpi: dpiByYear.get(yr.year)?.shrunkOverall ?? dpiByYear.get(yr.year)?.meanOverall ?? null,
-        }));
-        // Append * to in-progress season labels in the chart axis too.
-        const labels = data.map(x =>
-          UI.isPartialSeason(x.year, manifest) ? `${x.year}*` : String(x.year));
-        const points = data.map(x => x.points);
-        const dpiVals = data.map(x => x.dpi);
-
-        const canvas = UI.el('canvas');
-        wrap.appendChild(UI.el('div', { class: 'chart-wrap tall' }, canvas));
-        setTimeout(() => {
-          new Chart(canvas, {
-            data: {
-              labels,
-              datasets: [
-                { type: 'bar', label: 'Points', data: points,
-                  backgroundColor: '#e10600', yAxisID: 'y' },
-                { type: 'line', label: 'DPI', data: dpiVals,
-                  borderColor: '#1f8efa', backgroundColor: '#1f8efa',
-                  pointRadius: 4, tension: 0.2, yAxisID: 'y1', spanGaps: true },
-              ],
-            },
-            options: {
-              responsive: true, maintainAspectRatio: false,
-              plugins: { legend: { labels: { color: '#e6e9ee' } } },
-              scales: {
-                x: { ticks: { color: '#9aa3af' }, grid: { color: '#2a313a' } },
-                y: { type: 'linear', position: 'left',
-                     title: { display: true, text: 'Championship points', color: '#9aa3af' },
-                     ticks: { color: '#9aa3af' }, grid: { color: '#2a313a' } },
-                y1: { type: 'linear', position: 'right',
-                      title: { display: true, text: 'DPI score (0-100)', color: '#9aa3af' },
-                      min: 0, max: 100,
-                      ticks: { color: '#9aa3af' }, grid: { display: false } },
-              },
-            },
-          });
-        }, 10);
         return wrap;
       }
 
