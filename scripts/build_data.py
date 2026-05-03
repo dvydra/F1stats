@@ -1230,6 +1230,45 @@ def main():
     with open(OUT / "dynasties.json", "w") as f:
         json.dump(dynasties_out, f, separators=(",", ":"))
 
+    # DNF reason categorisation per driver.
+    print("Baking dnf-reasons…")
+    def categorize_status(s):
+        if not s: return None
+        s = s.lower()
+        if any(k in s for k in ["accident","collision","spun","crash","off track","stalled","puncture"]):
+            return "driver"
+        if any(k in s for k in ["disqualif","excluded"]):
+            return "penalty"
+        if "retired" in s: return "retired"
+        return "mechanical"
+    dnf_acc = defaultdict(lambda: {"driver": 0, "mechanical": 0, "penalty": 0,
+                                   "retired": 0, "total": 0})
+    for r in rr:
+        cat = categorize_status(r.get("reasonRetired"))
+        if not cat: continue
+        dnf_acc[r["driverId"]][cat] += 1
+        dnf_acc[r["driverId"]]["total"] += 1
+    dnf_out = {did: dict(v) for did, v in dnf_acc.items() if v["total"] >= 5}
+    with open(OUT / "dnf-reasons.json", "w") as f:
+        json.dump(dnf_out, f, separators=(",", ":"))
+
+    # Pole-time history per circuit per year.
+    print("Baking circuit-pole-history…")
+    poleHist = defaultdict(dict)
+    for race in races:
+        cid = race.get("circuitId")
+        if not cid: continue
+        qs = sorted(quali_by_race.get(race["id"], []),
+                    key=lambda q: q.get("positionDisplayOrder", 9999))
+        if not qs: continue
+        pole = qs[0]
+        t = (pole.get("q3Millis") or pole.get("q2Millis")
+             or pole.get("q1Millis") or pole.get("timeMillis"))
+        if t and isinstance(t, int):
+            poleHist[cid][str(race["year"])] = t
+    with open(OUT / "circuit-pole-history.json", "w") as f:
+        json.dump(dict(poleHist), f, separators=(",", ":"))
+
     # Manifest
     last_season_races = by_year[last_year]
     last_race = max(last_season_races, key=lambda r: (r.get("date") or ""))

@@ -5,11 +5,12 @@ const RecordsView = {
   async render(root, topic) {
     root.replaceChildren(UI.loading('Loading records…'));
     const [drivers, dpiAll, search, dscMap, comebacks, circuits, ptw, drama,
-           engineStats, dynasties, manifest, constructors] = await Promise.all([
+           engineStats, dynasties, manifest, constructors, dnfReasons] = await Promise.all([
       F1Data.driverMap(), F1Data.dpiAll(), F1Data.driverSearch(),
       F1Data.constructorDsc(), F1Data.comebacks(), F1Data.circuitStats(),
       F1Data.poleToWin(), F1Data.seasonDrama(), F1Data.engineStats(),
       F1Data.dynasties(), F1Data.manifest(), F1Data.constructorMap(),
+      F1Data.dnfReasons(),
     ]);
     const searchById = new Map(search.map(s => [s.id, s]));
     const dpiById = new Map(dpiAll.map(d => [d.driverId, d]));
@@ -31,6 +32,8 @@ const RecordsView = {
       { id: 'poles',        label: 'Pole → win conversion',     desc: 'Who actually closes from pole' },
       { id: 'dynasties',    label: 'F1 family dynasties',       desc: 'Father vs son, brother vs brother' },
       { id: 'drama',        label: 'Most dramatic seasons',     desc: 'Lead changes + late title clinches' },
+      { id: 'age',          label: 'Performance vs age',        desc: 'How drivers peak and fall off' },
+      { id: 'dnfreasons',   label: 'How drivers retire',        desc: 'Driver-fault vs mechanical breakdown' },
     ];
 
     // Topic nav strip.
@@ -74,6 +77,8 @@ const RecordsView = {
       poles:        () => polesView(),
       dynasties:    () => dynastiesView(),
       drama:        () => dramaView(),
+      age:          () => ageView(),
+      dnfreasons:   () => dnfReasonsView(),
     };
     if (render[topic]) {
       content.appendChild(render[topic]());
@@ -505,6 +510,118 @@ const RecordsView = {
         grid.appendChild(card);
       }
       wrap.appendChild(grid);
+      return wrap;
+    }
+
+    function ageView() {
+      const wrap = UI.el('section', { class: 'card' });
+      wrap.appendChild(UI.h2({}, 'Performance vs age'));
+      wrap.appendChild(UI.p({ class: 'muted' },
+        'Each dot is a driver-season: their age at season-start (x) vs the season\'s ' +
+        'shrunk DPI (y). The orange line is the median DPI per age across the entire ' +
+        'F1 history. Most drivers peak in their late 20s/early 30s; sustained DPI > 60 ' +
+        'past 35 is rare.'));
+      // Build per-driver-season points.
+      const points = [];
+      const byAge = new Map();
+      for (const d of dpiAll) {
+        const drv = drivers.get(d.driverId);
+        if (!drv?.dateOfBirth) continue;
+        const dob = new Date(drv.dateOfBirth);
+        if (isNaN(dob)) continue;
+        for (const s of (d.seasons || [])) {
+          const seasonStart = new Date(`${s.year}-03-01`);
+          const ageMs = seasonStart - dob;
+          if (ageMs <= 0) continue;
+          const age = Math.round(ageMs / (365.25 * 24 * 3600 * 1000));
+          if (age < 16 || age > 65) continue;
+          const dpi = s.shrunkOverall ?? s.meanOverall;
+          if (dpi == null || (s.races || 0) < 5) continue;
+          points.push({ x: age, y: dpi, driverId: d.driverId,
+                        driverName: drv.fullName || drv.name, year: s.year });
+          if (!byAge.has(age)) byAge.set(age, []);
+          byAge.get(age).push(dpi);
+        }
+      }
+      // Median DPI per age.
+      const ageRange = [...byAge.keys()].sort((a, b) => a - b);
+      const median = (arr) => {
+        const s = [...arr].sort((a, b) => a - b);
+        return s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length/2 - 1] + s[s.length/2]) / 2;
+      };
+      const medianLine = ageRange.map(a => ({ x: a, y: median(byAge.get(a)) }));
+
+      const canvas = UI.el('canvas');
+      wrap.appendChild(UI.el('div', { class: 'chart-wrap tall' }, canvas));
+      setTimeout(() => new Chart(canvas, {
+        data: {
+          datasets: [
+            { type: 'scatter', label: 'Driver-season DPI', data: points, parsing: false,
+              pointRadius: 2.5, backgroundColor: 'rgba(31,142,250,0.4)' },
+            { type: 'line', label: 'Median per age', data: medianLine, parsing: false,
+              borderColor: '#ff7a45', backgroundColor: '#ff7a45',
+              tension: 0.25, pointRadius: 4, fill: false },
+          ],
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: {
+            legend: { labels: { color: '#e6e9ee' } },
+            tooltip: { callbacks: {
+              label: (ctx) => ctx.raw.driverName
+                ? `${ctx.raw.driverName} ${ctx.raw.year} — age ${ctx.raw.x}, DPI ${ctx.raw.y.toFixed(1)}`
+                : `age ${ctx.parsed.x} median DPI ${ctx.parsed.y.toFixed(1)}`,
+            } },
+          },
+          scales: {
+            x: { type: 'linear', min: 16, max: 60,
+                 title: { display: true, text: 'Age at season start', color: '#9aa3af' },
+                 ticks: { color: '#9aa3af' }, grid: { color: '#2a313a' } },
+            y: { title: { display: true, text: 'Shrunk DPI', color: '#9aa3af' },
+                 ticks: { color: '#9aa3af' }, grid: { color: '#2a313a' } },
+          },
+        },
+      }), 10);
+      return wrap;
+    }
+
+    function dnfReasonsView() {
+      const wrap = UI.el('section', { class: 'card' });
+      wrap.appendChild(UI.h2({}, 'How drivers retire'));
+      wrap.appendChild(UI.p({ class: 'muted' },
+        'Categorised retirements per driver: driver-fault (collisions, spins), mechanical ' +
+        '(engine, gearbox, hydraulics, etc.), penalty (disqualification), retired (officially ' +
+        'withdrew). Drivers with ≥5 career DNFs only.'));
+      const rows = Object.entries(dnfReasons)
+        .map(([did, r]) => {
+          const total = r.total || 1;
+          return {
+            did,
+            total,
+            driver: r.driver || 0,
+            mechanical: r.mechanical || 0,
+            penalty: r.penalty || 0,
+            retired: r.retired || 0,
+            driverPct: 100 * (r.driver || 0) / total,
+          };
+        })
+        .sort((a, b) => b.total - a.total);
+      wrap.appendChild(UI.table(
+        ['#', 'Driver', 'Total DNFs', 'Driver-fault', 'Mech.', 'Penalty', 'Retired', 'Driver %'],
+        rows.slice(0, 100).map((r, i) => {
+          const drv = drivers.get(r.did);
+          return [
+            { value: i + 1, class: 'pos' },
+            UI.driverLink(drv),
+            { value: r.total, class: 'pts' },
+            { value: r.driver, class: 'mono' },
+            { value: r.mechanical, class: 'mono' },
+            { value: r.penalty, class: 'mono' },
+            { value: r.retired, class: 'mono' },
+            { value: r.driverPct.toFixed(0) + '%', class: 'pts' },
+          ];
+        }),
+      ));
       return wrap;
     }
 

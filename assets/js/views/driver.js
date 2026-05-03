@@ -383,10 +383,15 @@ const DriverView = {
         ));
 
         // 6) Season-by-season table — keeps the tabular drill-down.
+        // Annotate team-change rows with a chevron and the YoY DPI delta.
+        let prevTeam = null, prevDpi = null;
         wrap.appendChild(UI.el('section', { class: 'card' },
           UI.h2({}, 'Season-by-season'),
+          UI.p({ class: 'muted' },
+            'Rows where the team changed are marked with → and a YoY DPI delta — '+
+            'so you can see whether the move helped or hurt.'),
           UI.table(
-            ['Year', 'Team', 'Pos', 'Points', 'Pts %', 'Wins', 'Shrunk DPI', 'Best 75%', 'qElo', 'DSC'],
+            ['Year', 'Team', 'Δ', 'Pos', 'Points', 'Pts %', 'Wins', 'Shrunk DPI', 'Best 75%', 'qElo', 'DSC'],
             career.map(yr => {
               const team = yr.races[0]?.result.constructorId;
               const c = constructors.get(team);
@@ -395,9 +400,26 @@ const DriverView = {
               const dpiVal = dr?.shrunkOverall ?? dr?.meanOverall;
               const max = seasonMax[String(yr.year)];
               const pct = (fs?.points != null && max) ? (100 * fs.points / max) : null;
+              const teamChanged = prevTeam != null && team && team !== prevTeam;
+              const dpiDelta = (teamChanged && prevDpi != null && dpiVal != null)
+                ? (dpiVal - prevDpi) : null;
+              const cell = teamChanged
+                ? UI.el('span', {
+                    style: 'color:' + (dpiDelta == null ? '#9aa3af'
+                                         : dpiDelta >= 0 ? '#7bd389' : '#cc4d4d'),
+                    title: dpiDelta != null
+                      ? `DPI ${dpiDelta >= 0 ? '+' : ''}${dpiDelta.toFixed(1)} after move`
+                      : 'Team change' },
+                    dpiDelta != null
+                      ? `→ ${dpiDelta >= 0 ? '+' : ''}${dpiDelta.toFixed(1)}`
+                      : '→')
+                : '';
+              prevTeam = team;
+              if (dpiVal != null) prevDpi = dpiVal;
               return [
                 UI.yearLabel(yr.year, manifest, { href: `#/season/${yr.year}` }),
                 UI.constructorLink(c),
+                cell,
                 { value: fs?.position ?? '—', class: 'mono' },
                 { value: fs?.points ?? '—', class: 'pts' },
                 { value: pct != null ? pct.toFixed(1) + '%' : '—', class: 'pts' },
