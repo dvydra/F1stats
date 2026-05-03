@@ -58,9 +58,13 @@ const HomeView = {
       );
       view.appendChild(standingsCard);
 
-      // Last race
-      const lastRace = season.races[season.races.length - 1];
-      const winner = lastRace.results[0];
+      // Last *completed* race — the season schedule includes upcoming
+      // rounds, so we walk backwards to find the most recent one that
+      // actually has results.
+      const lastRace = [...season.races].reverse().find(
+        r => Array.isArray(r.results) && r.results.length > 0
+      ) || season.races[season.races.length - 1];
+      const winner = lastRace.results?.[0];
       const winnerDriver = winner ? drivers.get(winner.driverId) : null;
 
       const lastRaceCard = UI.el('section', { class: 'card' },
