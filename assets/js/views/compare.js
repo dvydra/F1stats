@@ -1,41 +1,126 @@
 // Compare view: head-to-head two drivers across career.
 
+// Tiny autocomplete: matches name, abbreviation, team name, or year raced.
+// Returns a record with { el, getValue }. `current` preselects an id.
+function makeDriverPicker(searchIndex, current, labelFor) {
+  const wrap = UI.el('div', { class: 'driver-picker' });
+  const input = UI.el('input', { type: 'text', autocomplete: 'off', spellcheck: 'false',
+    placeholder: 'Search name, team, year…', class: 'driver-picker-input' });
+  const list = UI.el('div', { class: 'driver-picker-list' });
+  let value = current || '';
+  let activeIdx = -1;
+
+  if (current) input.value = labelFor(current);
+
+  function tokenize(q) {
+    return q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  }
+  function score(d, tokens) {
+    if (!tokens.length) return d.starts || 0;  // popularity sort when empty
+    let s = 0;
+    const hay = `${d.name} ${d.abbr || ''} ${(d.teams || []).join(' ')} ${(d.years || []).join(' ')}`.toLowerCase();
+    for (const t of tokens) {
+      if (!hay.includes(t)) return -1;
+      // Boost matches on name vs deep-fields
+      if (d.name.toLowerCase().startsWith(t)) s += 100;
+      else if (d.name.toLowerCase().includes(t)) s += 30;
+      if ((d.abbr || '').toLowerCase() === t) s += 80;
+      if ((d.teams || []).some(tm => tm.toLowerCase().includes(t))) s += 10;
+      if ((d.years || []).some(y => String(y) === t)) s += 20;
+    }
+    return s + Math.log1p(d.starts || 0);
+  }
+  function results(q) {
+    const tokens = tokenize(q);
+    const out = [];
+    for (const d of searchIndex) {
+      if (!d.starts) continue;
+      const s = score(d, tokens);
+      if (s < 0) continue;
+      out.push([s, d]);
+    }
+    out.sort((x, y) => y[0] - x[0]);
+    return out.slice(0, 12).map(x => x[1]);
+  }
+  function render() {
+    const items = results(input.value === labelFor(value) ? '' : input.value);
+    list.replaceChildren();
+    if (!items.length) { list.style.display = 'none'; return; }
+    list.style.display = 'block';
+    items.forEach((d, i) => {
+      const yrs = d.years.length ? `${d.years[0]}–${d.years[d.years.length-1]}` : '—';
+      const teams = (d.teams || []).slice(0, 3).join(', ') + (d.teams.length > 3 ? '…' : '');
+      const row = UI.el('div', { class: 'driver-picker-item' + (i === activeIdx ? ' active' : ''),
+        onmousedown: (e) => { e.preventDefault(); pick(d); } },
+        UI.el('div', { class: 'name' }, d.name,
+          d.abbr ? UI.el('span', { class: 'muted', style: 'margin-left:6px' }, d.abbr) : null),
+        UI.el('div', { class: 'sub muted' }, `${yrs} · ${d.starts} starts${teams ? ' · ' + teams : ''}`),
+      );
+      list.appendChild(row);
+    });
+  }
+  function pick(d) {
+    value = d.id;
+    input.value = labelFor(d.id);
+    list.style.display = 'none';
+    activeIdx = -1;
+  }
+
+  input.addEventListener('focus', () => { activeIdx = -1; render(); });
+  input.addEventListener('input', () => { value = ''; activeIdx = -1; render(); });
+  input.addEventListener('blur', () => { setTimeout(() => { list.style.display = 'none'; }, 120); });
+  input.addEventListener('keydown', (e) => {
+    const items = list.querySelectorAll('.driver-picker-item');
+    if (e.key === 'ArrowDown') { e.preventDefault(); activeIdx = Math.min(items.length - 1, activeIdx + 1); render(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); activeIdx = Math.max(0, activeIdx - 1); render(); }
+    else if (e.key === 'Enter' && activeIdx >= 0) {
+      e.preventDefault();
+      const matches = results(input.value === labelFor(value) ? '' : input.value);
+      if (matches[activeIdx]) pick(matches[activeIdx]);
+    } else if (e.key === 'Escape') { list.style.display = 'none'; }
+  });
+
+  wrap.appendChild(input);
+  wrap.appendChild(list);
+  return { el: wrap, getValue: () => value };
+}
+
 const CompareView = {
   async render(root, params = {}) {
     const a = params.a;
     const b = params.b;
 
     root.replaceChildren(UI.loading('Loading drivers…'));
-    const drivers = await F1Data.drivers();
+    const [drivers, searchIndex] = await Promise.all([
+      F1Data.drivers(), F1Data.driverSearch(),
+    ]);
     const driverMap = new Map(drivers.map(d => [d.id, d]));
+    const searchMap = new Map(searchIndex.map(s => [s.id, s]));
 
     const view = UI.div({});
     view.appendChild(UI.crumbs({ label: 'Home', href: '#/' }, { label: 'Compare' }));
     view.appendChild(UI.h1({}, 'Compare drivers head-to-head'));
 
-    // Selector
-    const row = UI.el('div', { class: 'selector-row' });
-    const mkSelect = (val) => {
-      const sel = UI.el('select');
-      sel.appendChild(UI.el('option', { value: '' }, '— pick driver —'));
-      const sorted = [...drivers]
-        .filter(d => d.totalRaceStarts > 0)
-        .sort((x, y) => (y.totalRaceStarts || 0) - (x.totalRaceStarts || 0));
-      for (const d of sorted) {
-        const o = UI.el('option', { value: d.id },
-          `${d.fullName || d.name} (${d.totalRaceStarts || 0} starts)`);
-        if (d.id === val) o.selected = true;
-        sel.appendChild(o);
-      }
-      return sel;
+    // Two autocomplete pickers — search on name, team, year, or abbr.
+    const labelFor = (id) => {
+      const s = searchMap.get(id);
+      if (!s) return id;
+      const yrs = s.years.length ? `${s.years[0]}–${s.years[s.years.length-1]}` : '—';
+      return `${s.name} · ${yrs}`;
     };
-    const aSel = mkSelect(a);
-    const bSel = mkSelect(b);
+    const aPicker = makeDriverPicker(searchIndex, a, labelFor);
+    const bPicker = makeDriverPicker(searchIndex, b, labelFor);
     const goBtn = UI.el('button', { class: 'btn',
       onclick: () => {
-        if (aSel.value && bSel.value) location.hash = `#/compare/${aSel.value}/${bSel.value}`;
+        const av = aPicker.getValue(), bv = bPicker.getValue();
+        if (av && bv) location.hash = `#/compare/${av}/${bv}`;
       } }, 'Compare →');
-    row.appendChild(aSel); row.appendChild(UI.el('span', {}, 'vs')); row.appendChild(bSel); row.appendChild(goBtn);
+    const row = UI.el('div', { class: 'compare-pickers' },
+      aPicker.el,
+      UI.el('span', { class: 'vs' }, 'vs'),
+      bPicker.el,
+      goBtn,
+    );
     view.appendChild(row);
 
     if (!a || !b) {
@@ -51,9 +136,10 @@ const CompareView = {
       return;
     }
 
-    const [careerA, careerB, dpiAll] = await Promise.all([
-      F1Data.driverCareer(a), F1Data.driverCareer(b), F1Data.dpiAll(),
+    const [careerA, careerB, dpiAll, manifest] = await Promise.all([
+      F1Data.driverCareer(a), F1Data.driverCareer(b), F1Data.dpiAll(), F1Data.manifest(),
     ]);
+    const seasonMax = manifest.seasonMaxPoints || {};
     const dpiA = dpiAll.find(x => x.driverId === a);
     const dpiB = dpiAll.find(x => x.driverId === b);
 
@@ -73,20 +159,51 @@ const CompareView = {
     // Stat rows
     const compareCard = UI.el('section', { class: 'card' });
     compareCard.appendChild(UI.h2({}, 'Career stats'));
-    const statRow = (label, va, vb, higherWins = true) => {
-      const wa = va != null && (vb == null || (higherWins ? va > vb : va < vb));
-      const wb = vb != null && (va == null || (higherWins ? vb > va : vb < va));
+    const statRow = (label, va, vb, higherWins = true, ca = va, cb = vb) => {
+      // ca, cb = numeric compare values (default to va, vb for back-compat)
+      const wa = ca != null && (cb == null || (higherWins ? ca > cb : ca < cb));
+      const wb = cb != null && (ca == null || (higherWins ? cb > ca : cb < ca));
       return UI.el('div', { class: 'compare-stat' },
         UI.el('div', { class: 'a' + (wa ? ' winner' : '') }, va == null ? '—' : String(va)),
         UI.el('div', { class: 'label' }, label),
         UI.el('div', { class: 'b' + (wb ? ' winner' : '') }, vb == null ? '—' : String(vb))
       );
     };
+    // Career-points "% of available" (sums season-max for years driver actually raced).
+    const careerPctA = (() => {
+      let pts = 0, max = 0;
+      for (const y of careerA) {
+        const sp = y.finalStanding?.points;
+        const sm = seasonMax[String(y.year)];
+        if (sp == null || !sm) continue;
+        pts += sp; max += sm;
+      }
+      return max ? (100 * pts / max) : null;
+    })();
+    const careerPctB = (() => {
+      let pts = 0, max = 0;
+      for (const y of careerB) {
+        const sp = y.finalStanding?.points;
+        const sm = seasonMax[String(y.year)];
+        if (sp == null || !sm) continue;
+        pts += sp; max += sm;
+      }
+      return max ? (100 * pts / max) : null;
+    })();
+
     compareCard.appendChild(statRow('Race starts', da.totalRaceStarts, db.totalRaceStarts));
+    compareCard.appendChild(statRow('Sprint races',
+      dpiA?.totalSprints ?? 0, dpiB?.totalSprints ?? 0));
     compareCard.appendChild(statRow('Wins', da.totalRaceWins, db.totalRaceWins));
     compareCard.appendChild(statRow('Podiums', da.totalPodiums, db.totalPodiums));
     compareCard.appendChild(statRow('Poles', da.totalPolePositions, db.totalPolePositions));
     compareCard.appendChild(statRow('Career points', da.totalPoints, db.totalPoints));
+    compareCard.appendChild(statRow('% of available',
+      careerPctA != null ? careerPctA.toFixed(1) + '%' : null,
+      careerPctB != null ? careerPctB.toFixed(1) + '%' : null,
+      true,
+      // numeric compare
+      careerPctA, careerPctB));
     compareCard.appendChild(statRow('Championships', da.totalChampionshipWins, db.totalChampionshipWins));
     compareCard.appendChild(statRow('Best championship', da.bestChampionshipPosition, db.bestChampionshipPosition, false));
     compareCard.appendChild(statRow('Shrunk DPI',
@@ -112,15 +229,25 @@ const CompareView = {
       dpiB?.meanDsc != null ? dpiB.meanDsc.toFixed(1) : null));
     view.appendChild(compareCard);
 
-    // Per-season points chart
+    // Per-season points chart — normalised to "% of season's available points"
+    // so 1950s seasons (~60 max) compare meaningfully with 2024 (~650 max).
     const yearsA = new Map(careerA.map(y => [y.year, y]));
     const yearsB = new Map(careerB.map(y => [y.year, y]));
     const allYears = [...new Set([...yearsA.keys(), ...yearsB.keys()])].sort();
+    const pctOf = (pts, year) => {
+      const max = seasonMax[String(year)];
+      if (pts == null || !max) return null;
+      return 100 * pts / max;
+    };
+    const pctA = allYears.map(y => pctOf(yearsA.get(y)?.finalStanding?.points, y));
+    const pctB = allYears.map(y => pctOf(yearsB.get(y)?.finalStanding?.points, y));
     const ptsA = allYears.map(y => yearsA.get(y)?.finalStanding?.points ?? null);
     const ptsB = allYears.map(y => yearsB.get(y)?.finalStanding?.points ?? null);
 
     const chartCard = UI.el('section', { class: 'card' });
-    chartCard.appendChild(UI.h2({}, 'Points by season'));
+    chartCard.appendChild(UI.h2({}, 'Share of season’s available points'));
+    chartCard.appendChild(UI.p({ class: 'muted' },
+      'Each driver’s championship points as a percentage of the maximum a driver could have scored that year. Strips out the era inflation: 1990 awarded 144 points season-max, 2024 awarded 652. Includes sprint points.'));
     const canvas = UI.el('canvas');
     chartCard.appendChild(UI.el('div', { class: 'chart-wrap tall' }, canvas));
     view.appendChild(chartCard);
@@ -144,17 +271,30 @@ const CompareView = {
         data: {
           labels: allYears.map(String),
           datasets: [
-            { label: da.lastName || da.name, data: ptsA, borderColor: '#e10600',
-              backgroundColor: '#e10600', tension: 0.2, spanGaps: true },
-            { label: db.lastName || db.name, data: ptsB, borderColor: '#1f8efa',
-              backgroundColor: '#1f8efa', tension: 0.2, spanGaps: true },
+            { label: da.lastName || da.name, data: pctA, borderColor: '#e10600',
+              backgroundColor: '#e10600', tension: 0.2, spanGaps: true,
+              raw: ptsA },
+            { label: db.lastName || db.name, data: pctB, borderColor: '#1f8efa',
+              backgroundColor: '#1f8efa', tension: 0.2, spanGaps: true,
+              raw: ptsB },
           ],
         },
         options: { responsive: true, maintainAspectRatio: false,
-          plugins: { legend: { labels: { color: '#e6e9ee' } } },
+          plugins: {
+            legend: { labels: { color: '#e6e9ee' } },
+            tooltip: { callbacks: {
+              label: (ctx) => {
+                const pct = ctx.parsed.y;
+                const raw = ctx.dataset.raw?.[ctx.dataIndex];
+                const max = seasonMax[allYears[ctx.dataIndex]];
+                return `${ctx.dataset.label}: ${pct == null ? '—' : pct.toFixed(1) + '%'} (${raw ?? '—'} of ${max ?? '—'} pts)`;
+              },
+            } },
+          },
           scales: { x: { ticks: { color: '#9aa3af' }, grid: { color: '#2a313a' } },
-                    y: { ticks: { color: '#9aa3af' }, grid: { color: '#2a313a' },
-                         title: { display: true, text: 'Points', color: '#9aa3af' } } } },
+                    y: { min: 0, max: 100, ticks: { color: '#9aa3af', callback: v => v + '%' },
+                         grid: { color: '#2a313a' },
+                         title: { display: true, text: '% of season max', color: '#9aa3af' } } } },
       });
       new Chart(dpiCanvas, {
         type: 'line',

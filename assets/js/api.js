@@ -22,6 +22,7 @@ async function loadJSON(path) {
 const F1Data = {
   manifest: () => loadJSON('index.json'),
   drivers: () => loadJSON('drivers.json'),
+  driverSearch: () => loadJSON('driver-search.json'),
   constructors: () => loadJSON('constructors.json'),
   grandsPrix: () => loadJSON('grands-prix.json'),
   circuits: () => loadJSON('circuits.json'),

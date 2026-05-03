@@ -318,13 +318,77 @@ button.btn.ghost:hover { border-color: var(--accent); }
 @media (max-width: 700px) { .compare-row { grid-template-columns: 1fr; } }
 .compare-stat {
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  align-items: center;
-  padding: 8px 4px;
+  grid-template-columns: 1fr minmax(160px, auto) 1fr;
+  column-gap: 20px;
+  align-items: baseline;
+  padding: 10px 4px;
   border-bottom: 1px solid var(--border);
   font-size: 14px;
 }
-.compare-stat .label { text-align: center; color: var(--text-dim); font-size: 12px; text-transform: uppercase; letter-spacing: 1px; }
-.compare-stat .a { text-align: right; font-family: var(--mono); }
-.compare-stat .b { text-align: left; font-family: var(--mono); }
+.compare-stat .label {
+  text-align: center; color: var(--text-dim);
+  font-size: 11px; text-transform: uppercase; letter-spacing: 1px;
+  white-space: nowrap;
+}
+.compare-stat .a { text-align: right; font-family: var(--mono); font-size: 16px; }
+.compare-stat .b { text-align: left;  font-family: var(--mono); font-size: 16px; }
 .compare-stat .winner { color: var(--green); font-weight: 700; }
+
+/* Compare driver picker (autocomplete) */
+.compare-pickers {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr auto;
+  gap: 12px;
+  align-items: center;
+  margin: 16px 0 24px;
+}
+.compare-pickers .vs {
+  font-family: var(--mono);
+  color: var(--text-dim);
+  text-align: center;
+}
+@media (max-width: 700px) {
+  .compare-pickers { grid-template-columns: 1fr; }
+  .compare-pickers .vs { padding: 4px 0; }
+}
+.driver-picker { position: relative; }
+.driver-picker-input {
+  width: 100%;
+  background: var(--bg-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+  box-sizing: border-box;
+}
+.driver-picker-input:focus {
+  border-color: var(--accent, #e10600);
+}
+.driver-picker-list {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-top: 4px;
+  max-height: 320px;
+  overflow-y: auto;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.4);
+}
+.driver-picker-item {
+  padding: 8px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+}
+.driver-picker-item:last-child { border-bottom: none; }
+.driver-picker-item:hover,
+.driver-picker-item.active { background: var(--bg-3, #1a1f25); }
+.driver-picker-item .name { font-weight: 600; }
+.driver-picker-item .sub { font-size: 11px; margin-top: 2px; }

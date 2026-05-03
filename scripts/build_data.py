@@ -441,6 +441,33 @@ def main():
     with open(OUT / "constructors.json", "w") as f:
         json.dump(slim_constructors, f, separators=(",", ":"))
 
+    # Search index — name + team + year tokens for compare-picker autocomplete.
+    race_year_by_id = {r["id"]: r["year"] for r in races}
+    driver_years = defaultdict(set)
+    driver_team_ids = defaultdict(set)
+    for entries in (rr, sr):
+        for e in entries:
+            did = e.get("driverId")
+            y = race_year_by_id.get(e.get("raceId"))
+            if not did or not y: continue
+            driver_years[did].add(y)
+            cid = e.get("constructorId")
+            if cid: driver_team_ids[did].add(cid)
+    cname = {c["id"]: c.get("name") for c in slim_constructors}
+    search_index = [{
+        "id": d["id"],
+        "name": d.get("fullName") or d.get("name"),
+        "abbr": d.get("abbreviation"),
+        "nat": d.get("nationality"),
+        "starts": d.get("totalRaceStarts") or 0,
+        "wins": d.get("totalRaceWins") or 0,
+        "years": sorted(driver_years.get(d["id"], [])),
+        "teamIds": sorted(driver_team_ids.get(d["id"], [])),
+        "teams": [cname.get(t, t) for t in sorted(driver_team_ids.get(d["id"], []))],
+    } for d in slim_drivers]
+    with open(OUT / "driver-search.json", "w") as f:
+        json.dump(search_index, f, separators=(",", ":"), ensure_ascii=False)
+
     with open(OUT / "grands-prix.json", "w") as f:
         json.dump([{"id": g["id"], "name": g.get("name"),
                     "fullName": g.get("fullName"), "country": g.get("countryId")}
@@ -503,6 +530,7 @@ def main():
     season_dsc_drivers = {}  # year -> {driverId: alpha}
     season_dsc_teams = {}    # year -> {teamId: beta}
     season_aggregates = {}   # year -> [aggregate dicts]
+    season_max_points_by_year = {}  # year -> int (era-aware ceiling)
 
     for year in years:
         season_races = sorted(by_year[year], key=lambda r: r["round"])
@@ -619,8 +647,22 @@ def main():
                 return None
             return max(counts.items(), key=lambda x: x[1])[0]
 
+        # Season max points (era-aware): sum of per-race ceilings, where the
+        # ceiling is the max points actually awarded to any driver in that
+        # round. Auto-handles era changes (10pt → 25pt), fastest-lap bonus,
+        # half-points races, and sprint scoring.
+        season_max_points = 0
+        for race in race_payload:
+            r_max = max((r.get("points") or 0 for r in race.get("results") or []),
+                        default=0)
+            s_max = max((r.get("points") or 0 for r in race.get("sprintResults") or []),
+                        default=0)
+            season_max_points += r_max + s_max
+        season_max_points_by_year[year] = season_max_points
+
         season_payload = {
             "year": year,
+            "maxPoints": season_max_points,
             "races": race_payload,
             "finalDriverStandings": [{
                 "position": s.get("positionNumber"), "driverId": s["driverId"],
@@ -874,6 +916,7 @@ def main():
                          "date": last_race.get("date")},
             "totalDrivers": len(slim_drivers),
             "totalConstructors": len(slim_constructors),
+            "seasonMaxPoints": {str(y): n for y, n in season_max_points_by_year.items()},
         }, f, separators=(",", ":"))
 
     print(f"\nDone. {len(years)} seasons baked. DPI v2 metrics: shrunkOverall, "
