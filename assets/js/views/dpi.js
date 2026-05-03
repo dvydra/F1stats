@@ -23,11 +23,20 @@ const DPISeasonView = {
         if (y === year) o.selected = true;
         sel.appendChild(o);
       }
+      const partial = UI.isPartialSeason(year, idx);
+      const yStar = partial ? `${year}*` : String(year);
       view.appendChild(UI.el('div', { class: 'selector-row' },
-        UI.h1({}, `${year} Driver Performance Index`),
+        UI.h1({}, `${yStar} Driver Performance Index`),
         sel,
         UI.el('a', { class: 'btn ghost', href: `#/dpi` }, 'Method'),
       ));
+      if (partial) {
+        const r = idx.seasonRounds[String(year)];
+        view.appendChild(UI.el('div', { class: 'partial-banner' },
+          `Season in progress — ${r.completed} of ${r.scheduled} rounds completed. ` +
+          `DPI uses Bayesian shrinkage so partial-season scores converge to 50 ` +
+          `until enough races are run.`));
+      }
       view.appendChild(UI.p({ class: 'muted' },
         'DPI v3: 30% Quali (teammate delta) + 40% Racecraft (points-weighted positions gained, DNF-adjusted) + 30% Finish (absolute result anchor). Sprints fold in at 0.3 weight; Bayesian-shrunk for sample size; Elo and DSC are orthogonal lenses.'));
 
@@ -264,10 +273,15 @@ const DPIExplainView = {
     view.appendChild(UI.h2({}, 'Pick a season'));
     const grid = UI.el('div', { class: 'grid grid-auto', style: 'margin-top:8px;' });
     for (const y of [...idx.years].reverse()) {
+      const partial = UI.isPartialSeason(y, idx);
+      const r = idx.seasonRounds?.[String(y)];
       grid.appendChild(UI.el('a', { href: `#/dpi/${y}`, class: 'card',
         style: 'text-align:center;padding:18px;cursor:pointer;' },
-        UI.el('div', { style: 'font-size:24px;font-weight:700;font-family:var(--mono);' }, String(y)),
-        UI.el('div', { class: 'muted', style: 'font-size:12px;margin-top:4px;' }, 'View leaderboard')
+        UI.el('div', { style: 'font-size:24px;font-weight:700;font-family:var(--mono);' },
+          String(y), partial ? UI.el('span', { class: 'partial-star',
+            title: r ? `In progress — ${r.completed} of ${r.scheduled} rounds` : 'In progress' }, '*') : null),
+        UI.el('div', { class: 'muted', style: 'font-size:12px;margin-top:4px;' },
+          partial ? `In progress · ${r.completed}/${r.scheduled} rounds` : 'View leaderboard')
       ));
     }
     view.appendChild(grid);

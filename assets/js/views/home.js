@@ -14,14 +14,16 @@ const HomeView = {
       ]);
 
       const view = UI.div({});
+      const partial = UI.isPartialSeason(year, idx);
+      const yStar = partial ? `${year}*` : String(year);
 
       // Hero
       const hero = UI.el('section', { class: 'hero' },
-        UI.h1({}, `F1 Stats — ${idx.years[0]}–${year}`),
+        UI.h1({}, `F1 Stats — ${idx.years[0]}–${yStar}`),
         UI.p({}, `Browse every Formula 1 season, race, driver and team. ${idx.totalDrivers} drivers, ${idx.totalConstructors} constructors, ${idx.years.length} seasons.`),
         UI.el('div', { style: 'margin-top:14px; display:flex; gap:8px; flex-wrap:wrap;' },
-          UI.el('a', { class: 'btn', href: `#/season/${year}` }, `${year} season →`),
-          UI.el('a', { class: 'btn ghost', href: `#/dpi/${year}` }, `${year} DPI ranking →`),
+          UI.el('a', { class: 'btn', href: `#/season/${year}` }, `${yStar} season →`),
+          UI.el('a', { class: 'btn ghost', href: `#/dpi/${year}` }, `${yStar} DPI ranking →`),
           UI.el('a', { class: 'btn ghost', href: `#/compare` }, 'Compare drivers →'),
         )
       );
@@ -30,10 +32,13 @@ const HomeView = {
       // Latest season standings
       const cs = season.finalDriverStandings.slice(0, 10);
       const dpiByDriver = new Map(dpi.drivers.map(d => [d.driverId, d]));
+      const standingsHeader = partial
+        ? `${year} championship · top 10 (in progress, ${idx.seasonRounds[year].completed}/${idx.seasonRounds[year].scheduled} rounds)`
+        : `${year} championship · top 10`;
 
       const standingsCard = UI.el('section', { class: 'card' },
         UI.el('div', { style: 'display:flex;justify-content:space-between;align-items:baseline;' },
-          UI.h2({}, `${year} championship · top 10`),
+          UI.h2({}, standingsHeader),
           UI.el('a', { href: `#/season/${year}`, class: 'muted' }, 'View full standings →'),
         ),
         UI.table(
@@ -96,7 +101,7 @@ const HomeView = {
         .slice(0, 8);
       const dpiCard = UI.el('section', { class: 'card' },
         UI.el('div', { style: 'display:flex;justify-content:space-between;align-items:baseline;' },
-          UI.h2({}, `${year} Driver Performance Index`),
+          UI.h2({}, `${yStar} Driver Performance Index`),
           UI.el('a', { href: `#/dpi/${year}`, class: 'muted' }, 'Full leaderboard + chart →'),
         ),
         UI.p({ class: 'muted' },

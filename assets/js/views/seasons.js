@@ -11,10 +11,16 @@ const SeasonsListView = {
 
     const grid = UI.el('div', { class: 'grid grid-auto', style: 'margin-top:16px;' });
     for (const y of [...idx.years].reverse()) {
+      const partial = UI.isPartialSeason(y, idx);
+      const r = idx.seasonRounds?.[String(y)];
       grid.appendChild(UI.el('a', { href: `#/season/${y}`, class: 'card',
         style: 'text-align:center;padding:18px;cursor:pointer;' },
-        UI.el('div', { style: 'font-size:24px;font-weight:700;font-family:var(--mono);' }, String(y)),
-        UI.el('div', { class: 'muted', style: 'font-size:12px;margin-top:4px;' }, 'View season')
+        UI.el('div', { style: 'font-size:24px;font-weight:700;font-family:var(--mono);' },
+          String(y),
+          partial ? UI.el('span', { class: 'partial-star',
+            title: r ? `In progress — ${r.completed} of ${r.scheduled} rounds` : 'In progress' }, '*') : null),
+        UI.el('div', { class: 'muted', style: 'font-size:12px;margin-top:4px;' },
+          partial ? `${r.completed}/${r.scheduled} rounds` : 'View season')
       ));
     }
     view.appendChild(grid);
@@ -44,15 +50,18 @@ const SeasonView = {
 
       // Season selector
       const idx = await F1Data.manifest();
+      const partial = UI.isPartialSeason(year, idx);
+      const r = idx.seasonRounds?.[String(year)];
       const sel = UI.el('select', { onchange: (e) => location.hash = `#/season/${e.target.value}` });
       for (const y of [...idx.years].reverse()) {
-        const o = UI.el('option', { value: y }, String(y));
+        const o = UI.el('option', { value: y },
+          UI.isPartialSeason(y, idx) ? `${y} (in progress)` : String(y));
         if (y === year) o.selected = true;
         sel.appendChild(o);
       }
 
       view.appendChild(UI.el('div', { class: 'selector-row' },
-        UI.h1({}, `${year} season`),
+        UI.h1({}, `${year}${partial ? '*' : ''} season`),
         sel,
         UI.el('a', { class: 'btn ghost', href: `#/dpi/${year}` }, 'DPI ranking'),
       ));

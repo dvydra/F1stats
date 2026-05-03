@@ -9,7 +9,9 @@ const ConstructorView = {
       ]);
       const c = constructors.get(constructorId);
       if (!c) throw new Error(`Unknown constructor: ${constructorId}`);
-      const career = await F1Data.constructorCareer(constructorId);
+      const [career, manifest] = await Promise.all([
+        F1Data.constructorCareer(constructorId), F1Data.manifest(),
+      ]);
 
       const view = UI.div({});
       view.appendChild(UI.crumbs(
@@ -73,7 +75,7 @@ const ConstructorView = {
               const ds = new Set();
               for (const r of yr.races) for (const res of r.results) ds.add(res.driverId);
               return [
-                UI.el('a', { href: `#/season/${yr.year}` }, String(yr.year)),
+                UI.yearLabel(yr.year, manifest, { href: `#/season/${yr.year}` }),
                 { value: fs?.position ?? '—', class: 'mono' },
                 { value: fs?.points ?? '—', class: 'pts' },
                 { value: fs?.wins ?? '—', class: 'pts' },
@@ -98,7 +100,8 @@ const ConstructorView = {
           year: yr.year, points: yr.finalStanding?.points ?? 0,
           pos: yr.finalStanding?.position ?? null,
         }));
-        const labels = data.map(d => String(d.year));
+        const labels = data.map(d =>
+          UI.isPartialSeason(d.year, manifest) ? `${d.year}*` : String(d.year));
         const points = data.map(d => d.points);
         const canvas = UI.el('canvas');
         wrap.appendChild(UI.el('div', { class: 'chart-wrap tall' }, canvas));

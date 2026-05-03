@@ -294,11 +294,15 @@ const CompareView = {
 
     root.replaceChildren(view);
 
+    // Year labels with * for in-progress seasons.
+    const yearLabels = allYears.map(y =>
+      UI.isPartialSeason(y, manifest) ? `${y}*` : String(y));
+
     setTimeout(() => {
       new Chart(canvas, {
         type: 'line',
         data: {
-          labels: allYears.map(String),
+          labels: yearLabels,
           datasets: [
             { label: da.lastName || da.name, data: pctA, borderColor: '#e10600',
               backgroundColor: '#e10600', tension: 0.2, spanGaps: true,
@@ -328,7 +332,7 @@ const CompareView = {
       new Chart(posCanvas, {
         type: 'line',
         data: {
-          labels: allYears.map(String),
+          labels: yearLabels,
           datasets: [
             { label: da.lastName || da.name, data: posA, borderColor: '#e10600',
               backgroundColor: '#e10600', tension: 0.2, spanGaps: true, pointRadius: 4 },
@@ -353,7 +357,7 @@ const CompareView = {
       new Chart(dpiCanvas, {
         type: 'line',
         data: {
-          labels: allYears.map(String),
+          labels: yearLabels,
           datasets: [
             { label: da.lastName || da.name, data: allYears.map(y => dpiByYearA.get(y) ?? null),
               borderColor: '#e10600', backgroundColor: '#e10600', tension: 0.2, spanGaps: true },

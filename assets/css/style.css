@@ -193,6 +193,15 @@ table.f1-table {
   margin-left: 1px;
   cursor: help;
 }
+.partial-banner {
+  background: rgba(225, 6, 0, 0.08);
+  border-left: 3px solid var(--accent, #e10600);
+  padding: 10px 14px;
+  border-radius: 4px;
+  margin: 8px 0 16px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
 
 /* Country flag — small, monochrome-friendly, sits before the name */
 .flag {
