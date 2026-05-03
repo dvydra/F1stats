@@ -114,23 +114,54 @@ const DPISeasonView = {
       root.replaceChildren(view);
 
       setTimeout(() => {
+        const xs = points.map(p => p.x);
+        const ys = points.map(p => p.y);
+        const xMin = 0;
+        const xMax = Math.max(...xs, 1);
+        const yLo = Math.min(...ys);
+        const yHi = Math.max(...ys);
+        const yPad = Math.max((yHi - yLo) * 0.08, 1);
+        const yMin = yLo - yPad;
+        const yMax = yHi + yPad;
+
         new Chart(canvas, {
           type: 'scatter',
           data: { datasets: [{ data: points, parsing: false, pointRadius: 7,
             backgroundColor: points.map(p => DPI.scoreColor(p.y)),
             borderColor: '#0b0d10', borderWidth: 1 }] },
           options: { responsive: true, maintainAspectRatio: false,
+            clip: false,
             plugins: { legend: { display: false }, tooltip: { callbacks: {
               label: (ctx) => `${ctx.raw.driverName} (${ctx.raw.team}): ${ctx.raw.x} pts · DPI ${ctx.raw.y.toFixed(1)}` } } },
             scales: {
               x: { title: { display: true, text: 'Championship points', color: '#9aa3af' },
+                   min: xMin, max: xMax,
                    ticks: { color: '#9aa3af' }, grid: { color: '#2a313a' } },
               y: { title: { display: true, text: 'Shrunk DPI', color: '#9aa3af' },
-                   suggestedMin: 0, suggestedMax: 100,
+                   min: yMin, max: yMax,
                    ticks: { color: '#9aa3af' }, grid: { color: '#2a313a' } },
             },
           },
           plugins: [{
+            id: 'diagonal',
+            beforeDatasetsDraw(chart) {
+              const { ctx, scales: { x, y }, chartArea } = chart;
+              ctx.save();
+              ctx.beginPath();
+              ctx.rect(chartArea.left, chartArea.top,
+                       chartArea.right - chartArea.left,
+                       chartArea.bottom - chartArea.top);
+              ctx.clip();
+              ctx.strokeStyle = 'rgba(154,163,175,0.5)';
+              ctx.lineWidth = 1.5;
+              ctx.setLineDash([6, 5]);
+              ctx.beginPath();
+              ctx.moveTo(x.getPixelForValue(x.min), y.getPixelForValue(y.min));
+              ctx.lineTo(x.getPixelForValue(x.max), y.getPixelForValue(y.max));
+              ctx.stroke();
+              ctx.restore();
+            },
+          }, {
             id: 'driverLabels',
             afterDatasetsDraw(chart) {
               const { ctx } = chart;

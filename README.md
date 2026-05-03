@@ -1,11 +1,21 @@
 # F1 Stats
 
+[![License: CC BY 4.0](https://img.shields.io/badge/License-CC%20BY%204.0-d40000?style=for-the-badge&labelColor=%23333)](https://creativecommons.org/licenses/by/4.0/)
+[![Data: f1db](https://img.shields.io/badge/Data-f1db-d40000?style=for-the-badge&labelColor=%23333)](https://github.com/f1db/f1db)
+
 A browsable Formula 1 stats site covering every season, race, driver and team
 from 1950 to today — with a custom **Driver Performance Index (DPI)** that
 attempts to isolate driver skill from car performance.
 
 The whole thing is a static site: HTML, CSS, vanilla JS, and pre-baked JSON.
 No build step, no server, no API key. Just open `index.html`.
+
+> **Data credit.** All historical race data comes from the
+> [**f1db**](https://github.com/f1db/f1db) project, licensed under
+> [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). The baked JSON
+> in `data/` is a derivative of f1db v2026.3.0; this project is released
+> under the same licence (see [`LICENSE`](LICENSE)). Not affiliated with
+> Formula 1, the FIA, or f1db.
 
 ## Features
 
@@ -163,3 +173,20 @@ data/                        -- baked output (committed)
 #/dpi                                DPI explainer + all-time leaderboard
 #/dpi/:year                          Per-season DPI
 ```
+
+## License & attribution
+
+This project — code, baked data, and the DPI metric definitions — is
+licensed under [Creative Commons Attribution 4.0
+International](https://creativecommons.org/licenses/by/4.0/) (CC BY 4.0).
+You are free to share and adapt it for any purpose, including commercially,
+provided you give appropriate credit and indicate if changes were made.
+
+The baked data in `data/` is a derivative work of
+[**f1db**](https://github.com/f1db/f1db) (also CC BY 4.0). When you reuse
+this project's data, please credit both:
+
+- **f1db** — original Formula 1 dataset, CC BY 4.0
+- **F1 Stats / DPI** — derivative + custom metric, CC BY 4.0
+
+See [`LICENSE`](LICENSE) for the full licence text.
