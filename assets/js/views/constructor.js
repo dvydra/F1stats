@@ -145,54 +145,162 @@ const ConstructorView = {
   },
 };
 
+// All-time constructors leaderboard — sortable table mirroring the drivers view.
 const ConstructorsListView = {
   async render(root) {
     root.replaceChildren(UI.loading('Loading teams…'));
-    const list = await F1Data.constructors();
+    const rows = await F1Data.constructorSearch();
+
     const view = UI.div({});
-    view.appendChild(UI.h1({}, 'Constructors'));
-    view.appendChild(UI.p({ class: 'muted' }, `${list.length} teams in F1 history.`));
+    view.appendChild(UI.h1({}, 'All-time teams'));
+    view.appendChild(UI.p({ class: 'muted' },
+      `${rows.length} constructors from 1950 to today. Click any column header to sort.`));
 
     const filterRow = UI.el('div', { class: 'selector-row' });
-    const search = UI.el('input', { type: 'search', placeholder: 'Search team…', style: 'flex:1;' });
-    const sort = UI.el('select');
-    for (const [k, l] of [
-      ['name', 'A → Z'],
-      ['totalPoints', 'Most career points'],
-      ['totalRaceWins', 'Most wins'],
-      ['totalChampionshipWins', 'Most titles'],
-    ]) sort.appendChild(UI.el('option', { value: k }, l));
-    filterRow.appendChild(search);
-    filterRow.appendChild(sort);
+    const searchInp = UI.el('input', { type: 'search',
+      placeholder: 'Search team or year…', style: 'flex:1;' });
+    const eraSel = UI.el('select');
+    const ERAS = [
+      { val: 'all',     label: 'All eras' },
+      { val: '1950-69', label: '1950–69' },
+      { val: '1970-89', label: '1970–89' },
+      { val: '1990-09', label: '1990–2009' },
+      { val: '2010+',   label: '2010 → present' },
+      { val: 'current', label: 'Current grid (raced 2024+)' },
+    ];
+    for (const e of ERAS) eraSel.appendChild(UI.el('option', { value: e.val }, e.label));
+    const minSel = UI.el('select');
+    for (const v of [0, 1, 5, 25, 100]) {
+      minSel.appendChild(UI.el('option', { value: v },
+        v === 0 ? 'Any starts' : `≥ ${v} starts`));
+    }
+    minSel.value = '1';
+    filterRow.appendChild(searchInp);
+    filterRow.appendChild(eraSel);
+    filterRow.appendChild(minSel);
     view.appendChild(filterRow);
 
-    const grid = UI.el('div', { class: 'grid grid-auto' });
-    view.appendChild(grid);
-    const renderList = () => {
-      const q = search.value.trim().toLowerCase();
-      let filtered = list.filter(c => !q || (c.fullName || c.name || '').toLowerCase().includes(q));
-      const k = sort.value;
-      filtered.sort((a, b) => {
-        if (k === 'name') return (a.name || '').localeCompare(b.name || '');
-        return (b[k] || 0) - (a[k] || 0);
+    const tableWrap = UI.el('div', { class: 'card', style: 'padding:0;overflow-x:auto;' });
+    view.appendChild(tableWrap);
+
+    const COLS = [
+      { key: 'rank',       label: '#',      align: 'right',  fmt: (_, i) => i + 1, sort: null },
+      { key: 'name',       label: 'Team',   align: 'left',
+        fmt: (r) => UI.el('a', { href: `#/constructor/${r.id}` }, r.name) },
+      { key: 'country',    label: 'Country', align: 'left',
+        fmt: (r) => r.country ? r.country.toUpperCase() : '—' },
+      { key: 'years',      label: 'Years',  align: 'left',
+        fmt: (r) => r.firstYear ? `${r.firstYear}–${r.lastYear}` : '—',
+        sort: (a, b) => (b.firstYear || 0) - (a.firstYear || 0) },
+      { key: 'seasons',    label: 'Sn',     align: 'right' },
+      { key: 'totalRaceStarts',     label: 'Starts',  align: 'right' },
+      { key: 'totalRaceWins',       label: 'Wins',    align: 'right' },
+      { key: 'totalPodiums',        label: 'Pod',     align: 'right' },
+      { key: 'totalPolePositions',  label: 'Pole',    align: 'right' },
+      { key: 'totalChampionshipWins', label: 'WCC',   align: 'right' },
+      { key: 'bestChampionshipPosition', label: 'Best', align: 'right',
+        fmt: (r) => r.bestChampionshipPosition ?? '—',
+        sort: (a, b) => (a.bestChampionshipPosition || 99) - (b.bestChampionshipPosition || 99) },
+      { key: 'avgChampPos', label: 'Avg pos', align: 'right',
+        fmt: (r) => r.avgChampPos != null ? r.avgChampPos.toFixed(1) : '—',
+        sort: (a, b) => (a.avgChampPos ?? 99) - (b.avgChampPos ?? 99) },
+      { key: 'totalPoints',         label: 'Pts',     align: 'right' },
+    ];
+
+    let sortKey = 'totalRaceWins';
+    let sortDir = 'desc';
+
+    const inEra = (r) => {
+      const era = eraSel.value;
+      if (era === 'all') return true;
+      if (!r.firstYear) return false;
+      const overlap = (lo, hi) => r.firstYear <= hi && (r.lastYear || r.firstYear) >= lo;
+      switch (era) {
+        case '1950-69': return overlap(1950, 1969);
+        case '1970-89': return overlap(1970, 1989);
+        case '1990-09': return overlap(1990, 2009);
+        case '2010+':   return overlap(2010, 9999);
+        case 'current': return (r.lastYear || 0) >= 2024;
+      }
+      return true;
+    };
+
+    const matches = (r, q) => {
+      if (!q) return true;
+      const tokens = q.toLowerCase().split(/\s+/).filter(Boolean);
+      const hay = `${r.name} ${r.country || ''} ${r.firstYear || ''} ${r.lastYear || ''}`.toLowerCase();
+      return tokens.every(t => hay.includes(t));
+    };
+
+    const sortFor = (key) => {
+      const col = COLS.find(c => c.key === key);
+      if (col?.sort) return col.sort;
+      const numeric = (v) => v == null ? -Infinity : v;
+      return (a, b) => numeric(b[key]) - numeric(a[key]);
+    };
+
+    const renderTable = () => {
+      const q = searchInp.value.trim();
+      const minStarts = parseInt(minSel.value, 10);
+      let filtered = rows.filter(r =>
+        (r.totalRaceStarts || 0) >= minStarts && inEra(r) && matches(r, q));
+      const cmp = sortFor(sortKey);
+      filtered.sort(cmp);
+      if (sortDir === 'asc') filtered.reverse();
+
+      const t = UI.el('table', { class: 'f1-table all-time' });
+      const thead = UI.el('thead');
+      const trh = UI.el('tr');
+      for (const c of COLS) {
+        const isSorted = c.key === sortKey;
+        const arrow = isSorted ? (sortDir === 'desc' ? ' ▾' : ' ▴') : '';
+        const th = UI.el('th', {
+          class: `sortable ${c.align === 'right' ? 'right' : ''} ${isSorted ? 'sorted' : ''}`,
+          onclick: () => {
+            if (c.key === 'rank') return;
+            if (sortKey === c.key) sortDir = (sortDir === 'desc' ? 'asc' : 'desc');
+            else { sortKey = c.key; sortDir = 'desc'; }
+            renderTable();
+          },
+        }, c.label + arrow);
+        trh.appendChild(th);
+      }
+      thead.appendChild(trh);
+      t.appendChild(thead);
+
+      const tbody = UI.el('tbody');
+      const PAGE = 250;
+      filtered.slice(0, PAGE).forEach((r, i) => {
+        const tr = UI.el('tr');
+        for (const c of COLS) {
+          const v = c.fmt ? c.fmt(r, i) : (r[c.key] ?? '—');
+          if (v && v.nodeType) tr.appendChild(UI.el('td', { class: c.align === 'right' ? 'right' : '' }, v));
+          else tr.appendChild(UI.el('td', { class: c.align === 'right' ? 'right' : '' }, String(v)));
+        }
+        tbody.appendChild(tr);
       });
-      UI.clearChildren(grid);
-      for (const c of filtered.slice(0, 200)) {
-        grid.appendChild(UI.el('a', { class: 'card', href: `#/constructor/${c.id}`,
-          style: 'padding:14px;cursor:pointer;' },
-          UI.el('div', { style: 'font-weight:600;font-size:15px;' }, c.fullName || c.name),
-          UI.el('div', { class: 'muted', style: 'font-size:12px;margin-top:4px;' },
-            [c.country?.toUpperCase(),
-             c.totalRaceWins ? `${c.totalRaceWins} wins` : null,
-             c.totalChampionshipWins ? `${c.totalChampionshipWins}× champion` : null,
-            ].filter(Boolean).join(' · ')),
-        ));
+      t.appendChild(tbody);
+
+      UI.clearChildren(tableWrap);
+      tableWrap.appendChild(UI.el('div', { class: 'table-wrap' }, t));
+      if (filtered.length > PAGE) {
+        tableWrap.appendChild(UI.el('div', { class: 'muted', style: 'padding:10px 14px;font-size:12px;' },
+          `Showing ${PAGE} of ${filtered.length}. Refine filters to see the rest.`));
+      } else if (!filtered.length) {
+        tableWrap.appendChild(UI.el('div', { class: 'muted', style: 'padding:14px;' },
+          'No teams match these filters.'));
+      } else {
+        tableWrap.appendChild(UI.el('div', { class: 'muted', style: 'padding:10px 14px;font-size:12px;' },
+          `${filtered.length} teams.`));
       }
     };
-    search.addEventListener('input', renderList);
-    sort.addEventListener('change', renderList);
-    renderList();
+
+    searchInp.addEventListener('input', renderTable);
+    eraSel.addEventListener('change', renderTable);
+    minSel.addEventListener('change', renderTable);
+
     root.replaceChildren(view);
+    renderTable();
   },
 };
 

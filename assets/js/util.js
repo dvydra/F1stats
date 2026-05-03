@@ -28,26 +28,102 @@ const a = tag('a');
 const h1 = tag('h1'); const h2 = tag('h2'); const h3 = tag('h3');
 const p = tag('p');
 
+// Sortable table. Each column header click cycles desc → asc → unsorted.
+// Cells can be: null, string, number, {value, class}, or any DOM Node.
+// Sort key per cell is the {value} or textContent, parsed as a number when
+// possible (handles "P5", "62.0%", "1,234"); '—' / blank sinks to the bottom.
+// Pass opts.sortable=false to disable.
 function table(headers, rows, opts = {}) {
+  const sortable = opts.sortable !== false;
   const wrap = el('div', { class: 'table-wrap' });
-  const t = el('table', { class: 'f1-table' });
+  const t = el('table', { class: 'f1-table' + (sortable ? ' sortable' : '') });
   const thead = el('thead');
   const trh = el('tr');
-  for (const h of headers) trh.appendChild(el('th', {}, h));
+  const original = rows.slice();
+  let current = rows.slice();
+  let sortKey = null;       // column index, or null = original order
+  let sortDir = 'desc';
+
+  function cellComparable(cell) {
+    if (cell == null) return null;
+    let raw;
+    if (cell.nodeType) raw = (cell.textContent || '').trim();
+    else if (typeof cell === 'object' && 'value' in cell) raw = cell.value;
+    else raw = cell;
+    if (raw == null) return null;
+    if (typeof raw === 'number') return raw;
+    const s = String(raw).trim();
+    if (!s || s === '—') return null;
+    const num = parseFloat(s.replace(/[,%$]/g, '').replace(/^P/i, ''));
+    return Number.isNaN(num) ? s.toLowerCase() : num;
+  }
+
+  function renderBody() {
+    const tbody = el('tbody');
+    for (const r of current) {
+      const tr = el('tr');
+      for (const cell of r) {
+        if (cell && cell.nodeType) tr.appendChild(el('td', {}, cell));
+        else if (cell && typeof cell === 'object' && 'value' in cell)
+          tr.appendChild(el('td', { class: cell.class || '' }, cell.value));
+        else tr.appendChild(el('td', {}, cell == null ? '—' : String(cell)));
+      }
+      tbody.appendChild(tr);
+    }
+    const old = t.querySelector('tbody');
+    if (old) t.replaceChild(tbody, old);
+    else t.appendChild(tbody);
+  }
+
+  function applySort() {
+    if (sortKey == null) {
+      current = original.slice();
+    } else {
+      const k = sortKey;
+      current = original.slice().sort((ra, rb) => {
+        const a = cellComparable(ra[k]);
+        const b = cellComparable(rb[k]);
+        if (a == null && b == null) return 0;
+        if (a == null) return 1;   // nulls/dashes always sink
+        if (b == null) return -1;
+        const cmp = (typeof a === 'number' && typeof b === 'number')
+          ? a - b
+          : String(a).localeCompare(String(b));
+        return sortDir === 'asc' ? cmp : -cmp;
+      });
+    }
+    renderBody();
+    updateHeaders();
+  }
+
+  function updateHeaders() {
+    Array.from(trh.children).forEach((th, i) => {
+      th.classList.toggle('sorted', i === sortKey);
+      const arrow = th.querySelector('.th-arrow');
+      if (arrow) arrow.textContent =
+        i === sortKey ? (sortDir === 'desc' ? '▾' : '▴') : '';
+    });
+  }
+
+  headers.forEach((h, i) => {
+    const th = el('th', sortable ? { class: 'th-sort' } : {},
+      el('span', { class: 'th-label' }, h),
+      sortable ? el('span', { class: 'th-arrow' }, '') : null,
+    );
+    if (sortable) {
+      th.addEventListener('click', () => {
+        if (sortKey === i) {
+          if (sortDir === 'desc') sortDir = 'asc';
+          else { sortKey = null; sortDir = 'desc'; }
+        } else { sortKey = i; sortDir = 'desc'; }
+        applySort();
+      });
+    }
+    trh.appendChild(th);
+  });
   thead.appendChild(trh);
   t.appendChild(thead);
-  const tbody = el('tbody');
-  for (const r of rows) {
-    const tr = el('tr');
-    for (const cell of r) {
-      if (cell && cell.nodeType) tr.appendChild(el('td', {}, cell));
-      else if (cell && typeof cell === 'object' && 'value' in cell)
-        tr.appendChild(el('td', { class: cell.class || '' }, cell.value));
-      else tr.appendChild(el('td', {}, cell == null ? '—' : String(cell)));
-    }
-    tbody.appendChild(tr);
-  }
-  t.appendChild(tbody);
+  renderBody();
   wrap.appendChild(t);
   return wrap;
 }

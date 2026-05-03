@@ -169,6 +169,29 @@ table.f1-table {
 .f1-table a { color: var(--text); }
 .f1-table a:hover { color: var(--accent-2); }
 
+/* Sortable headers (UI.table) */
+.f1-table.sortable th.th-sort {
+  cursor: pointer;
+  user-select: none;
+  position: relative;
+}
+.f1-table.sortable th.th-sort:hover { color: var(--text); }
+.f1-table.sortable th.th-sort .th-arrow {
+  display: inline-block;
+  width: 12px;
+  margin-left: 4px;
+  color: var(--accent-2, #1f8efa);
+  font-size: 11px;
+}
+.f1-table.sortable th.th-sort.sorted { color: var(--text); }
+.f1-table.sortable th.th-sort.sorted .th-arrow { color: var(--accent, #e10600); }
+
+/* All-time drivers table */
+.f1-table.all-time th.right, .f1-table.all-time td.right { text-align: right; }
+.f1-table.all-time th.sortable { cursor: pointer; user-select: none; }
+.f1-table.all-time th.sortable:hover { color: var(--text); }
+.f1-table.all-time th.sorted { color: var(--accent, #e10600); }
+
 /* Pills / chips */
 .chip {
   display: inline-flex;

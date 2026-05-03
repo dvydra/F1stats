@@ -211,66 +211,209 @@ const DriverView = {
   },
 };
 
+// All-time drivers leaderboard — sortable table joining driver totals,
+// years-active, and DPI career metrics.
 const DriversListView = {
   async render(root) {
     root.replaceChildren(UI.loading('Loading drivers…'));
-    const drivers = await F1Data.drivers();
-    const view = UI.div({});
-    view.appendChild(UI.h1({}, 'Drivers'));
-    view.appendChild(UI.p({ class: 'muted' }, `${drivers.length} drivers in F1 history.`));
+    const [drivers, search, dpiAll] = await Promise.all([
+      F1Data.drivers(), F1Data.driverSearch(), F1Data.dpiAll(),
+    ]);
+    const searchById = new Map(search.map(s => [s.id, s]));
+    const dpiById = new Map(dpiAll.map(d => [d.driverId, d]));
 
-    // Sort + filter
+    // Joined row per driver — one source of truth the table sorts/filters from.
+    const rows = drivers.map(d => {
+      const s = searchById.get(d.id);
+      const dpi = dpiById.get(d.id);
+      const years = s?.years || [];
+      return {
+        id: d.id,
+        name: d.fullName || d.name,
+        nat: d.nationality,
+        firstYear: years[0] || null,
+        lastYear: years[years.length - 1] || null,
+        seasons: years.length,
+        starts: d.totalRaceStarts || 0,
+        wins: d.totalRaceWins || 0,
+        podiums: d.totalPodiums || 0,
+        poles: d.totalPolePositions || 0,
+        titles: d.totalChampionshipWins || 0,
+        bestChamp: d.bestChampionshipPosition,
+        points: d.totalPoints || 0,
+        avgChamp: s?.avgChampPos ?? null,
+        shrunkDpi: dpi?.shrunkOverall ?? null,
+        qElo: dpi?.qualiElo ?? null,
+        rElo: dpi?.raceElo ?? null,
+        teams: s?.teams || [],
+      };
+    });
+
+    const view = UI.div({});
+    view.appendChild(UI.h1({}, 'All-time drivers'));
+    view.appendChild(UI.p({ class: 'muted' },
+      `${drivers.length} drivers from 1950 to today. Click any column header to sort.`));
+
+    // Filter row
     const filterRow = UI.el('div', { class: 'selector-row' });
-    const search = UI.el('input', { type: 'search', placeholder: 'Search by name…', style: 'flex:1;' });
-    const sort = UI.el('select');
-    for (const [k, l] of [
-      ['lastName', 'A → Z'],
-      ['totalPoints', 'Most career points'],
-      ['totalRaceWins', 'Most wins'],
-      ['totalChampionshipWins', 'Most titles'],
-      ['totalRaceStarts', 'Most starts'],
-    ]) sort.appendChild(UI.el('option', { value: k }, l));
-    filterRow.appendChild(search);
-    filterRow.appendChild(sort);
+    const searchInp = UI.el('input', { type: 'search',
+      placeholder: 'Search name, team, year…', style: 'flex:1;' });
+    const eraSel = UI.el('select');
+    const ERAS = [
+      { val: 'all',     label: 'All eras' },
+      { val: '1950-69', label: '1950–69' },
+      { val: '1970-89', label: '1970–89' },
+      { val: '1990-09', label: '1990–2009' },
+      { val: '2010+',   label: '2010 → present' },
+      { val: 'current', label: 'Current grid (raced 2024+)' },
+    ];
+    for (const e of ERAS) eraSel.appendChild(UI.el('option', { value: e.val }, e.label));
+    const minStartsSel = UI.el('select');
+    for (const v of [0, 1, 25, 50, 100, 200]) {
+      minStartsSel.appendChild(UI.el('option', { value: v },
+        v === 0 ? 'Any starts' : `≥ ${v} starts`));
+    }
+    minStartsSel.value = '1';
+    filterRow.appendChild(searchInp);
+    filterRow.appendChild(eraSel);
+    filterRow.appendChild(minStartsSel);
     view.appendChild(filterRow);
 
-    const list = UI.el('div', { class: 'grid grid-auto' });
-    view.appendChild(list);
+    const tableWrap = UI.el('div', { class: 'card', style: 'padding:0;overflow-x:auto;' });
+    view.appendChild(tableWrap);
 
-    const renderList = () => {
-      const q = search.value.trim().toLowerCase();
-      let filtered = drivers.filter(d => {
-        if (!q) return true;
-        return (d.fullName || d.name || '').toLowerCase().includes(q);
-      });
-      const sortKey = sort.value;
-      filtered.sort((a, b) => {
-        if (sortKey === 'lastName') return (a.lastName || a.name).localeCompare(b.lastName || b.name);
-        return (b[sortKey] || 0) - (a[sortKey] || 0);
-      });
-      UI.clearChildren(list);
-      for (const d of filtered.slice(0, 200)) {
-        list.appendChild(UI.el('a', { class: 'card', href: `#/driver/${d.id}`,
-          style: 'padding:14px;cursor:pointer;' },
-          UI.el('div', { style: 'font-weight:600;font-size:15px;' }, d.fullName || d.name),
-          UI.el('div', { class: 'muted', style: 'font-size:12px;margin-top:4px;' },
-            [d.nationality?.toUpperCase().slice(0, 3),
-             d.totalRaceStarts ? `${d.totalRaceStarts} starts` : null,
-             d.totalRaceWins ? `${d.totalRaceWins} wins` : null,
-             d.totalChampionshipWins ? `${d.totalChampionshipWins}× champion` : null,
-            ].filter(Boolean).join(' · ')),
-        ));
+    const COLS = [
+      { key: 'rank',      label: '#',       align: 'right',  fmt: (_, i) => i + 1, sort: null },
+      { key: 'name',      label: 'Driver',  align: 'left',
+        fmt: (r) => UI.el('a', { href: `#/driver/${r.id}` }, r.name) },
+      { key: 'nat',       label: 'Nat',     align: 'left',
+        fmt: (r) => r.nat ? r.nat.slice(0, 3).toUpperCase() : '—' },
+      { key: 'years',     label: 'Years',   align: 'left',
+        fmt: (r) => r.firstYear ? `${r.firstYear}–${r.lastYear}` : '—',
+        sort: (a, b) => (b.firstYear || 0) - (a.firstYear || 0) },
+      { key: 'seasons',   label: 'Sn',      align: 'right' },
+      { key: 'starts',    label: 'Starts',  align: 'right' },
+      { key: 'wins',      label: 'Wins',    align: 'right' },
+      { key: 'podiums',   label: 'Pod',     align: 'right' },
+      { key: 'poles',     label: 'Pole',    align: 'right' },
+      { key: 'titles',    label: 'WDC',     align: 'right' },
+      { key: 'bestChamp', label: 'Best',    align: 'right',
+        fmt: (r) => r.bestChamp ?? '—',
+        sort: (a, b) => (a.bestChamp || 99) - (b.bestChamp || 99) },
+      { key: 'avgChamp',  label: 'Avg pos', align: 'right',
+        fmt: (r) => r.avgChamp != null ? r.avgChamp.toFixed(1) : '—',
+        sort: (a, b) => (a.avgChamp ?? 99) - (b.avgChamp ?? 99) },
+      { key: 'points',    label: 'Pts',     align: 'right' },
+      { key: 'shrunkDpi', label: 'DPI',     align: 'right',
+        fmt: (r) => r.shrunkDpi != null
+          ? UI.el('span', { style: `color:${DPI.scoreColor(r.shrunkDpi)};font-weight:700` },
+                  r.shrunkDpi.toFixed(1))
+          : '—' },
+      { key: 'qElo',      label: 'qElo',    align: 'right',
+        fmt: (r) => r.qElo != null ? Math.round(r.qElo) : '—' },
+      { key: 'rElo',      label: 'rElo',    align: 'right',
+        fmt: (r) => r.rElo != null ? Math.round(r.rElo) : '—' },
+    ];
+
+    let sortKey = 'wins';
+    let sortDir = 'desc';
+
+    const inEra = (r) => {
+      const era = eraSel.value;
+      if (era === 'all') return true;
+      if (!r.firstYear) return false;
+      const overlap = (lo, hi) =>
+        r.firstYear <= hi && (r.lastYear || r.firstYear) >= lo;
+      switch (era) {
+        case '1950-69': return overlap(1950, 1969);
+        case '1970-89': return overlap(1970, 1989);
+        case '1990-09': return overlap(1990, 2009);
+        case '2010+':   return overlap(2010, 9999);
+        case 'current': return (r.lastYear || 0) >= 2024;
       }
-      if (filtered.length > 200) {
-        list.appendChild(UI.el('div', { class: 'muted', style: 'padding:14px;' },
-          `Showing 200 of ${filtered.length}. Refine search to see more.`));
+      return true;
+    };
+
+    const matches = (r, q) => {
+      if (!q) return true;
+      const tokens = q.toLowerCase().split(/\s+/).filter(Boolean);
+      const hay = `${r.name} ${(r.teams || []).join(' ')} ${r.nat || ''} `
+        + `${r.firstYear || ''} ${r.lastYear || ''}`;
+      const lower = hay.toLowerCase();
+      return tokens.every(t => lower.includes(t));
+    };
+
+    const sortFor = (key) => {
+      const col = COLS.find(c => c.key === key);
+      if (col?.sort) return col.sort;
+      // numeric default — handle null as "worst"
+      const numeric = (v) => v == null ? -Infinity : v;
+      return (a, b) => numeric(b[key]) - numeric(a[key]);
+    };
+
+    const renderTable = () => {
+      const q = searchInp.value.trim();
+      const minStarts = parseInt(minStartsSel.value, 10);
+      let filtered = rows.filter(r =>
+        r.starts >= minStarts && inEra(r) && matches(r, q));
+
+      const cmp = sortFor(sortKey);
+      filtered.sort(cmp);
+      if (sortDir === 'asc') filtered.reverse();
+
+      const t = UI.el('table', { class: 'f1-table all-time' });
+      const thead = UI.el('thead');
+      const trh = UI.el('tr');
+      for (const c of COLS) {
+        const isSorted = c.key === sortKey;
+        const arrow = isSorted ? (sortDir === 'desc' ? ' ▾' : ' ▴') : '';
+        const th = UI.el('th', {
+          class: `sortable ${c.align === 'right' ? 'right' : ''} ${isSorted ? 'sorted' : ''}`,
+          onclick: () => {
+            if (c.key === 'rank') return;
+            if (sortKey === c.key) sortDir = (sortDir === 'desc' ? 'asc' : 'desc');
+            else { sortKey = c.key; sortDir = 'desc'; }
+            renderTable();
+          },
+        }, c.label + arrow);
+        trh.appendChild(th);
+      }
+      thead.appendChild(trh);
+      t.appendChild(thead);
+
+      const tbody = UI.el('tbody');
+      const PAGE = 250;
+      filtered.slice(0, PAGE).forEach((r, i) => {
+        const tr = UI.el('tr');
+        for (const c of COLS) {
+          const v = c.fmt ? c.fmt(r, i) : (r[c.key] ?? '—');
+          if (v && v.nodeType) tr.appendChild(UI.el('td', { class: c.align === 'right' ? 'right' : '' }, v));
+          else tr.appendChild(UI.el('td', { class: c.align === 'right' ? 'right' : '' }, String(v)));
+        }
+        tbody.appendChild(tr);
+      });
+      t.appendChild(tbody);
+
+      UI.clearChildren(tableWrap);
+      tableWrap.appendChild(UI.el('div', { class: 'table-wrap' }, t));
+      if (filtered.length > PAGE) {
+        tableWrap.appendChild(UI.el('div', { class: 'muted', style: 'padding:10px 14px;font-size:12px;' },
+          `Showing ${PAGE} of ${filtered.length}. Refine filters to see the rest.`));
+      } else if (!filtered.length) {
+        tableWrap.appendChild(UI.el('div', { class: 'muted', style: 'padding:14px;' },
+          'No drivers match these filters.'));
+      } else {
+        tableWrap.appendChild(UI.el('div', { class: 'muted', style: 'padding:10px 14px;font-size:12px;' },
+          `${filtered.length} drivers.`));
       }
     };
-    search.addEventListener('input', renderList);
-    sort.addEventListener('change', renderList);
-    renderList();
+
+    searchInp.addEventListener('input', renderTable);
+    eraSel.addEventListener('change', renderTable);
+    minStartsSel.addEventListener('change', renderTable);
 
     root.replaceChildren(view);
+    renderTable();
   },
 };
 

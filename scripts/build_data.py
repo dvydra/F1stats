@@ -442,6 +442,7 @@ def main():
         json.dump(slim_constructors, f, separators=(",", ":"))
 
     # Search index — name + team + year tokens for compare-picker autocomplete.
+    # Also includes career mean championship position for the all-time table.
     race_year_by_id = {r["id"]: r["year"] for r in races}
     driver_years = defaultdict(set)
     driver_team_ids = defaultdict(set)
@@ -453,20 +454,71 @@ def main():
             driver_years[did].add(y)
             cid = e.get("constructorId")
             if cid: driver_team_ids[did].add(cid)
+    driver_champ_positions = defaultdict(list)
+    for s in season_drv_st:
+        did = s.get("driverId")
+        pos = s.get("positionNumber")
+        if did and pos is not None:
+            driver_champ_positions[did].append(pos)
     cname = {c["id"]: c.get("name") for c in slim_constructors}
-    search_index = [{
-        "id": d["id"],
-        "name": d.get("fullName") or d.get("name"),
-        "abbr": d.get("abbreviation"),
-        "nat": d.get("nationality"),
-        "starts": d.get("totalRaceStarts") or 0,
-        "wins": d.get("totalRaceWins") or 0,
-        "years": sorted(driver_years.get(d["id"], [])),
-        "teamIds": sorted(driver_team_ids.get(d["id"], [])),
-        "teams": [cname.get(t, t) for t in sorted(driver_team_ids.get(d["id"], []))],
-    } for d in slim_drivers]
+    search_index = []
+    for d in slim_drivers:
+        cps = driver_champ_positions.get(d["id"], [])
+        avg_champ = round(sum(cps) / len(cps), 2) if cps else None
+        search_index.append({
+            "id": d["id"],
+            "name": d.get("fullName") or d.get("name"),
+            "abbr": d.get("abbreviation"),
+            "nat": d.get("nationality"),
+            "starts": d.get("totalRaceStarts") or 0,
+            "wins": d.get("totalRaceWins") or 0,
+            "years": sorted(driver_years.get(d["id"], [])),
+            "teamIds": sorted(driver_team_ids.get(d["id"], [])),
+            "teams": [cname.get(t, t) for t in sorted(driver_team_ids.get(d["id"], []))],
+            "avgChampPos": avg_champ,
+            "champSeasons": len(cps),
+        })
     with open(OUT / "driver-search.json", "w") as f:
         json.dump(search_index, f, separators=(",", ":"), ensure_ascii=False)
+
+    # Constructor search index — drives the all-time teams leaderboard.
+    team_years = defaultdict(set)
+    for entries in (rr, sr):
+        for e in entries:
+            cid = e.get("constructorId")
+            y = race_year_by_id.get(e.get("raceId"))
+            if cid and y: team_years[cid].add(y)
+    team_champ_pos = defaultdict(list)
+    for s in season_cst_st:
+        cid = s.get("constructorId")
+        pos = s.get("positionNumber")
+        if cid and pos is not None:
+            team_champ_pos[cid].append(pos)
+    cstr_search = []
+    for c in slim_constructors:
+        yrs = sorted(team_years.get(c["id"], []))
+        cps = team_champ_pos.get(c["id"], [])
+        avg = round(sum(cps) / len(cps), 2) if cps else None
+        cstr_search.append({
+            "id": c["id"],
+            "name": c.get("name") or c.get("fullName"),
+            "country": c.get("country"),
+            "firstYear": yrs[0] if yrs else None,
+            "lastYear": yrs[-1] if yrs else None,
+            "seasons": len(yrs),
+            "totalRaceStarts": c.get("totalRaceStarts") or 0,
+            "totalRaceEntries": c.get("totalRaceEntries") or 0,
+            "totalRaceWins": c.get("totalRaceWins") or 0,
+            "totalPodiums": c.get("totalPodiums") or 0,
+            "totalPolePositions": c.get("totalPolePositions") or 0,
+            "totalChampionshipWins": c.get("totalChampionshipWins") or 0,
+            "bestChampionshipPosition": c.get("bestChampionshipPosition"),
+            "totalPoints": c.get("totalPoints") or 0,
+            "avgChampPos": avg,
+            "champSeasons": len(cps),
+        })
+    with open(OUT / "constructor-search.json", "w") as f:
+        json.dump(cstr_search, f, separators=(",", ":"), ensure_ascii=False)
 
     with open(OUT / "grands-prix.json", "w") as f:
         json.dump([{"id": g["id"], "name": g.get("name"),
