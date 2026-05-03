@@ -41,12 +41,30 @@ SEASONS_DIR = OUT / "seasons"
 DPI_DIR = OUT / "dpi"
 
 # ── DPI weights ────────────────────────────────────────────────────────────
-QUALI_WEIGHT = 0.40
-RACECRAFT_WEIGHT = 0.60
+# v3: re-balanced after the v2 leaderboard exposed a weighting flaw.
+# Bearman (in a Haas) was scoring above championship-winning Norris because
+# repeated P20→P10 grid recoveries summed to roughly the same weighted credit
+# as P3→P1 wins. The fix: replace the 1/k position weighting with the F1
+# points scale (so front gains dominate), and add an absolute Finish term so
+# the metric is anchored to where you actually ended the race.
+QUALI_WEIGHT = 0.30
+RACECRAFT_WEIGHT = 0.40
+FINISH_WEIGHT = 0.30
 QUALI_SCALE = 25
-RACECRAFT_SCALE = 25
-SPRINT_WEIGHT = 0.30      # each sprint counts as 0.3 of a race
+RACECRAFT_SCALE = 2.5     # each F1-point of value gained moves score 2.5
+SPRINT_WEIGHT = 0.30      # each sprint counts as 0.3 of a race in aggregates
 SHRINK_K = 10             # Bayesian shrinkage strength toward prior 50
+
+# F1 modern (2010+) points scale — used as the position-value function across
+# all eras for consistency. v(p)=0 for p>10. Pit-lane / DNS treated as P20.
+F1_POINTS = {1: 25, 2: 18, 3: 15, 4: 12, 5: 10, 6: 8, 7: 6, 8: 4, 9: 2, 10: 1}
+
+
+def points_value(p):
+    """F1 points value for a finishing/grid position. 0 for outside top 10."""
+    if not p or p < 1:
+        return 0
+    return F1_POINTS.get(int(p), 0)
 
 # ── Elo parameters ─────────────────────────────────────────────────────────
 ELO_INIT = 1500.0
@@ -96,13 +114,27 @@ def best_quali_millis(q):
     return None
 
 
-def weighted_gain(grid, finish):
-    """Σ ±1/k weighted positions gained (or lost). 0 if no movement."""
-    if not grid or not finish or grid == finish:
+def points_gain(grid, finish):
+    """Net F1-points value gained from grid to finish. Negative = lost value.
+    A points-based replacement for the v1/v2 1/k weighted gain. P3→P1 yields
+    +10 (15→25), P20→P10 yields +1 (0→1). This stops back-of-grid grinding
+    from out-scoring race winners."""
+    if not grid or not finish:
         return 0.0
-    if finish < grid:
-        return sum(1 / k for k in range(finish + 1, grid + 1))
-    return -sum(1 / k for k in range(grid + 1, finish + 1))
+    return points_value(finish) - points_value(grid)
+
+
+def finish_score(finish, kind):
+    """Absolute-result anchor: how well you ended the race regardless of grid.
+    Linear from P1=100 down to P20=5; mechanical DNF excluded (None);
+    driver-fault DNF = 0."""
+    if kind == "mechanical":
+        return None
+    if kind == "driver_fault":
+        return 0.0
+    if not finish:
+        return None
+    return clamp(100 * (21 - int(finish)) / 20, 0, 100)
 
 
 def clamp(x, lo, hi):
@@ -257,7 +289,7 @@ def compute_race_dpi(race_results, race_quali, race_pit_counts, *,
                 quali_session = sname
                 quali_rating = clamp(50 - quali_delta * QUALI_SCALE, 0, 100)
 
-        # Racecraft (raw and DNF-adjusted)
+        # Racecraft (raw and DNF-adjusted) — points-weighted
         racecraft = racecraft_adj = None
         net_gain = net_gain_adj = None
         if kind == "mechanical":
@@ -266,12 +298,11 @@ def compute_race_dpi(race_results, race_quali, race_pit_counts, *,
             racecraft = racecraft_adj = 0.0
         elif grid and finish:
             eg = 20 if grid == 0 else grid
-            net_gain = weighted_gain(eg, finish)
+            net_gain = points_gain(eg, finish)
             racecraft = clamp(50 + net_gain * RACECRAFT_SCALE, 0, 100)
             adj_g = adj_grid_of.get(did)
             adj_f = None
             if did in finishers:
-                # finish position among finishers — list sorted by classification
                 fin_sorted = sorted(
                     [x for x in race_results if x["driverId"] in finishers
                      and x.get("positionNumber")],
@@ -281,20 +312,26 @@ def compute_race_dpi(race_results, race_quali, race_pit_counts, *,
                         adj_f = j
                         break
             if adj_g and adj_f:
-                net_gain_adj = weighted_gain(adj_g, adj_f)
+                net_gain_adj = points_gain(adj_g, adj_f)
                 racecraft_adj = clamp(50 + net_gain_adj * RACECRAFT_SCALE, 0, 100)
             else:
-                # fall back to raw if we can't compute adjusted
                 net_gain_adj = net_gain
                 racecraft_adj = racecraft
 
-        def combine(q, r):
-            if q is not None and r is not None:
-                return q * QUALI_WEIGHT + r * RACECRAFT_WEIGHT
-            return q if q is not None else r
+        # Absolute Finish anchor (new in v3)
+        finish_rating = finish_score(finish, kind)
 
-        overall = combine(quali_rating, racecraft)
-        overall_adj = combine(quali_rating, racecraft_adj)
+        def combine(q, r, fin):
+            parts, weights = [], []
+            if q is not None: parts.append(q); weights.append(QUALI_WEIGHT)
+            if r is not None: parts.append(r); weights.append(RACECRAFT_WEIGHT)
+            if fin is not None: parts.append(fin); weights.append(FINISH_WEIGHT)
+            if not parts: return None
+            wsum = sum(weights)
+            return sum(p * w for p, w in zip(parts, weights)) / wsum
+
+        overall = combine(quali_rating, racecraft, finish_rating)
+        overall_adj = combine(quali_rating, racecraft_adj, finish_rating)
 
         entries.append({
             "driverId": did,
@@ -312,6 +349,7 @@ def compute_race_dpi(race_results, race_quali, race_pit_counts, *,
             "netGainAdj": round(net_gain_adj, 4) if net_gain_adj is not None else None,
             "racecraft": round(racecraft, 2) if racecraft is not None else None,
             "racecraftAdj": round(racecraft_adj, 2) if racecraft_adj is not None else None,
+            "finishRating": round(finish_rating, 2) if finish_rating is not None else None,
             "overall": round(overall, 2) if overall is not None else None,
             "overallAdj": round(overall_adj, 2) if overall_adj is not None else None,
             "isSprint": sprint,
@@ -562,13 +600,33 @@ def main():
                 "constructorStandings": slim_cstandings,
             })
 
+        # f1db season-standings rows don't carry a constructor; derive each
+        # driver's primary team from race results (most starts wins ties).
+        team_starts = defaultdict(lambda: defaultdict(int))
+        for race in season_races:
+            for r in results_by_race.get(race["id"], []):
+                team_starts[r["driverId"]][r["constructorId"]] += 1
+        # And per-driver season win count from race results
+        wins_by_driver = defaultdict(int)
+        for race in season_races:
+            for r in results_by_race.get(race["id"], []):
+                if r.get("positionNumber") == 1:
+                    wins_by_driver[r["driverId"]] += 1
+
+        def primary_team(did):
+            counts = team_starts.get(did)
+            if not counts:
+                return None
+            return max(counts.items(), key=lambda x: x[1])[0]
+
         season_payload = {
             "year": year,
             "races": race_payload,
             "finalDriverStandings": [{
                 "position": s.get("positionNumber"), "driverId": s["driverId"],
-                "constructorId": s.get("constructorId"),
-                "points": s.get("points"), "wins": s.get("totalRaceWins"),
+                "constructorId": s.get("constructorId") or primary_team(s["driverId"]),
+                "points": s.get("points"),
+                "wins": s.get("totalRaceWins") or wins_by_driver.get(s["driverId"], 0),
             } for s in sorted(season_drv_by_year.get(year, []),
                               key=lambda s: s.get("positionDisplayOrder", 9999))],
             "finalConstructorStandings": [{
@@ -652,6 +710,7 @@ def main():
             qvals = [e["qualiRating"] for e in ents if e["qualiRating"] is not None]
             rvals_raw = [e["racecraft"] for e in ents if e["racecraft"] is not None]
             rvals_adj = [e["racecraftAdj"] for e in ents if e["racecraftAdj"] is not None]
+            fvals = [e["finishRating"] for e in ents if e["finishRating"] is not None]
             ovals_raw = [e["overall"] for e in ents if e["overall"] is not None]
             ovals_adj = [e["overallAdj"] for e in ents if e["overallAdj"] is not None]
 
@@ -674,6 +733,7 @@ def main():
             mean_quali = (sum(qvals) / len(qvals)) if qvals else None
             mean_race_raw = (sum(rvals_raw) / len(rvals_raw)) if rvals_raw else None
             mean_race_adj = (sum(rvals_adj) / len(rvals_adj)) if rvals_adj else None
+            mean_finish = (sum(fvals) / len(fvals)) if fvals else None
             mean_overall_raw = (sum(ovals_raw) / len(ovals_raw)) if ovals_raw else None
 
             # DSC season score for this driver
@@ -689,6 +749,8 @@ def main():
                 "meanQuali": round(mean_quali, 2) if mean_quali is not None else None,
                 "meanRace": round(mean_race_raw, 2) if mean_race_raw is not None else None,
                 "meanRaceAdj": round(mean_race_adj, 2) if mean_race_adj is not None else None,
+                "meanFinish": round(mean_finish, 2) if mean_finish is not None else None,
+                "finishSamples": len(fvals),
                 "meanOverall": round(mean_overall_raw, 2) if mean_overall_raw is not None else None,
                 "meanOverallAdj": round(weighted_sum_o / weighted_n_o, 2) if weighted_n_o else None,
                 "best75Overall": round(best75, 2) if best75 is not None else None,
@@ -712,6 +774,7 @@ def main():
             json.dump({
                 "year": year,
                 "weights": {"quali": QUALI_WEIGHT, "racecraft": RACECRAFT_WEIGHT,
+                            "finish": FINISH_WEIGHT,
                             "sprint": SPRINT_WEIGHT, "shrinkK": SHRINK_K},
                 "drivers": aggregates,
                 "races": per_race_out,
@@ -725,6 +788,7 @@ def main():
     career = defaultdict(lambda: {
         "qualiSum": 0, "qualiN": 0,
         "raceSum": 0, "raceN": 0,
+        "finishSum": 0, "finishN": 0,
         "overallSum": 0, "overallN": 0,
         "best75Sum": 0, "best75N": 0,
         "totalRaces": 0, "totalSprints": 0,
@@ -742,6 +806,7 @@ def main():
                                  "meanOverall": a["meanOverallAdj"],
                                  "meanQuali": a["meanQuali"],
                                  "meanRace": a["meanRaceAdj"],
+                                 "meanFinish": a["meanFinish"],
                                  "best75Overall": a["best75Overall"],
                                  "shrunkOverall": a["shrunkOverall"],
                                  "qualiElo": a["qualiElo"],
@@ -753,6 +818,9 @@ def main():
             if a["meanRaceAdj"] is not None:
                 d["raceSum"] += a["meanRaceAdj"] * a["raceSamples"]
                 d["raceN"] += a["raceSamples"]
+            if a["meanFinish"] is not None:
+                d["finishSum"] += a["meanFinish"] * a["finishSamples"]
+                d["finishN"] += a["finishSamples"]
             if a["meanOverallAdj"] is not None:
                 d["overallSum"] += a["meanOverallAdj"] * a["races"]
                 d["overallN"] += a["races"]
@@ -767,6 +835,7 @@ def main():
     for did, d in career.items():
         meanQ = d["qualiSum"] / d["qualiN"] if d["qualiN"] else None
         meanR = d["raceSum"] / d["raceN"] if d["raceN"] else None
+        meanF = d["finishSum"] / d["finishN"] if d["finishN"] else None
         meanO = d["overallSum"] / d["overallN"] if d["overallN"] else None
         best75 = d["best75Sum"] / d["best75N"] if d["best75N"] else None
         meanDsc = d["dscSum"] / d["dscN"] if d["dscN"] else None
@@ -776,6 +845,7 @@ def main():
             "totalSprints": d["totalSprints"],
             "meanQuali": round(meanQ, 2) if meanQ is not None else None,
             "meanRace": round(meanR, 2) if meanR is not None else None,
+            "meanFinish": round(meanF, 2) if meanF is not None else None,
             "meanOverall": round(meanO, 2) if meanO is not None else None,
             "shrunkOverall": round(shrink(meanO, d["overallN"]), 2) if meanO is not None else None,
             "best75Overall": round(best75, 2) if best75 is not None else None,
@@ -794,8 +864,9 @@ def main():
     with open(OUT / "index.json", "w") as f:
         json.dump({
             "version": "f1db-v2026.3.0",
-            "dpiVersion": "v2",
+            "dpiVersion": "v3",
             "weights": {"quali": QUALI_WEIGHT, "racecraft": RACECRAFT_WEIGHT,
+                        "finish": FINISH_WEIGHT,
                         "sprint": SPRINT_WEIGHT, "shrinkK": SHRINK_K, "eloK": ELO_K},
             "years": years, "lastYear": last_year,
             "lastRace": {"id": last_race["id"], "year": last_race["year"],

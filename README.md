@@ -100,23 +100,49 @@ open http://127.0.0.1:8000/
 
 That's it. The site is just static files.
 
+## CLI
+
+There's also a colored terminal CLI that reads the same baked data:
+
+```bash
+./f1                       # latest season dashboard
+./f1 home
+./f1 seasons               # list every season
+./f1 schedule 2025         # race schedule
+./f1 season 2025           # standings + DPI leaderboard
+./f1 race 2025 14          # race + qualifying + DPI breakdown
+./f1 driver "max verstappen"
+./f1 team mclaren
+./f1 dpi 2025              # DPI for the season
+./f1 dpi all --top 20      # all-time DPI top 20
+./f1 elo                   # all-time qualifying-Elo top
+./f1 compare senna prost   # head-to-head with green-bold winners
+./f1 search hamilton
+```
+
+Pure Python, no third-party deps. ANSI colors and box-drawing chars; respects
+`NO_COLOR` and pipes to non-tty cleanly. Position cells are gold/silver/bronze
+for P1/P2/P3, DPI scores are colour-graded red→yellow→green.
+
 ## Project layout
 
 ```
-index.html                   -- app shell
-assets/css/style.css         -- single stylesheet
+index.html                   -- web app shell
+assets/css/style.css
 assets/js/util.js            -- DOM helpers
 assets/js/dpi.js             -- DPI display helpers
 assets/js/api.js             -- data layer (reads /data/*.json)
 assets/js/app.js             -- hash router + global search
 assets/js/views/             -- one file per view
   home.js
-  seasons.js                 -- seasons list + per-season detail
-  race.js                    -- race detail with charts
-  driver.js                  -- driver profile + drivers list
-  constructor.js             -- constructor profile + list
-  compare.js                 -- head-to-head two drivers
+  seasons.js
+  race.js
+  driver.js
+  constructor.js
+  compare.js
   dpi.js                     -- DPI explainer + per-season leaderboard
+f1                           -- shell wrapper for the CLI
+cli/f1.py                    -- colored terminal CLI (no third-party deps)
 scripts/build_data.py        -- preprocesses f1db dump into baked JSON
 data/                        -- baked output (committed)
 ```

@@ -172,9 +172,9 @@ const RaceView = {
         const wrap = UI.el('section', { class: 'card' },
           UI.h2({}, 'DPI breakdown for this race'),
           UI.p({ class: 'muted' },
-            'Race rating uses DNF-adjusted positions gained — only counts gains over drivers who actually finished. Pit stops shown for context. Overall = 0.40·Quali + 0.60·Race.'),
+            'Racecraft = points-weighted positions gained, DNF-adjusted. Finish = absolute result anchor (P1=100 → P20=5). Overall = 0.30·Q + 0.40·R + 0.30·F.'),
           UI.table(
-            ['Driver', 'Team', 'Q Δ%', 'Q rating', 'Grid → Finish', 'Pit', 'Race (raw)', 'Race (adj)', 'Status', 'Overall'],
+            ['Driver', 'Team', 'Q Δ%', 'Q rating', 'Grid → Finish', 'Pit', 'Race (adj)', 'Finish', 'Status', 'Overall'],
             sorted.map(e => {
               const d = drivers.get(e.driverId);
               const c = constructors.get(e.team);
@@ -187,8 +187,8 @@ const RaceView = {
                 { value: DPI.fmtScore(e.qualiRating), class: 'pts' },
                 { value: gridFin, class: 'mono' },
                 { value: e.pitStops ?? '—', class: 'mono' },
-                { value: DPI.fmtScore(e.racecraft), class: 'pts' },
                 { value: DPI.fmtScore(e.racecraftAdj), class: 'pts' },
+                { value: DPI.fmtScore(e.finishRating), class: 'pts' },
                 { value: e.statusKind, class: 'muted' },
                 UI.el('span', { class: 'pts',
                   style: overallShown != null ? `color:${DPI.scoreColor(overallShown)};font-weight:700` : '' },
@@ -204,7 +204,7 @@ const RaceView = {
           wrap.appendChild(UI.h2({}, 'Sprint DPI breakdown'));
           wrap.appendChild(UI.p({ class: 'muted' }, 'Same metric, applied to the sprint weekend. Counts at 0.3 weight in season aggregate.'));
           wrap.appendChild(UI.table(
-            ['Driver', 'Team', 'Q Δ%', 'Q rating', 'Grid → Finish', 'Race (adj)', 'Status', 'Overall'],
+            ['Driver', 'Team', 'Q Δ%', 'Q rating', 'Grid → Finish', 'Race (adj)', 'Finish', 'Status', 'Overall'],
             sSorted.map(e => {
               const d = drivers.get(e.driverId);
               const c = constructors.get(e.team);
@@ -217,6 +217,7 @@ const RaceView = {
                 { value: DPI.fmtScore(e.qualiRating), class: 'pts' },
                 { value: gridFin, class: 'mono' },
                 { value: DPI.fmtScore(e.racecraftAdj), class: 'pts' },
+                { value: DPI.fmtScore(e.finishRating), class: 'pts' },
                 { value: e.statusKind, class: 'muted' },
                 UI.el('span', { class: 'pts',
                   style: overallShown != null ? `color:${DPI.scoreColor(overallShown)};font-weight:700` : '' },

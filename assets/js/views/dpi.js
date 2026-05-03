@@ -29,7 +29,7 @@ const DPISeasonView = {
         UI.el('a', { class: 'btn ghost', href: `#/dpi` }, 'Method'),
       ));
       view.appendChild(UI.p({ class: 'muted' },
-        'DPI v2: car-adjusted via teammate qualifying delta; race score uses DNF-adjusted weighted positions gained; sprints fold in at 0.3 weight; Bayesian-shrunk for sample size; Elo and ridge-decomposition columns expose orthogonal lenses on the same season.'));
+        'DPI v3: 30% Quali (teammate delta) + 40% Racecraft (points-weighted positions gained, DNF-adjusted) + 30% Finish (absolute result anchor). Sprints fold in at 0.3 weight; Bayesian-shrunk for sample size; Elo and DSC are orthogonal lenses.'));
 
       // Points vs DPI scatter (uses shrunkOverall — the recommended metric)
       const standings = new Map(season.finalDriverStandings.map(s => [s.driverId, s]));
@@ -61,7 +61,7 @@ const DPISeasonView = {
           UI.el('div', { class: 'muted', style: 'font-size:12px;' },
             'Δ% = mean teammate quali delta · TM = teammate H2H wins · Sp = sprints')),
         UI.table(
-          ['#', 'Driver', 'Team', 'R/Sp', 'Quali', 'Race (adj)', 'Overall', 'Best 75%', 'Shrunk', 'Δ%', 'TM', 'Pts', 'qElo', 'DSC'],
+          ['#', 'Driver', 'Team', 'R/Sp', 'Quali', 'Race', 'Finish', 'Overall', 'Best 75%', 'Shrunk', 'Δ%', 'TM', 'Pts', 'qElo'],
           dpi.drivers.map((d, i) => {
             const drv = drivers.get(d.driverId);
             const tm = constructors.get(d.team);
@@ -74,6 +74,7 @@ const DPISeasonView = {
               { value: `${d.races}/${d.sprints}`, class: 'mono' },
               { value: DPI.fmtScore(d.meanQuali), class: 'pts' },
               { value: DPI.fmtScore(d.meanRaceAdj), class: 'pts' },
+              { value: DPI.fmtScore(d.meanFinish), class: 'pts' },
               { value: DPI.fmtScore(d.meanOverallAdj), class: 'pts' },
               { value: DPI.fmtScore(d.best75Overall), class: 'pts' },
               UI.el('span', { class: 'pts',
@@ -83,7 +84,6 @@ const DPISeasonView = {
               { value: tmRecord, class: 'mono' },
               { value: seasonPts ?? '—', class: 'pts' },
               { value: d.qualiElo != null ? Math.round(d.qualiElo) : '—', class: 'mono' },
-              { value: DPI.fmtScore(d.dscScore), class: 'pts' },
             ];
           })
         )
@@ -163,53 +163,60 @@ const DPIExplainView = {
 
     const view = UI.div({});
     view.appendChild(UI.crumbs({ label: 'Home', href: '#/' }, { label: 'DPI' }));
-    view.appendChild(UI.h1({}, 'Driver Performance Index — v2'));
+    view.appendChild(UI.h1({}, 'Driver Performance Index — v3'));
 
     view.appendChild(UI.el('section', { class: 'card', html: `
       <h2>The hypothesis</h2>
-      <p>F1 qualifying time is dominated by car performance, so a driver's true qualifying skill is the delta to their teammate (identical machinery). Race results, on the other hand, reflect the driver: position gained from grid to finish.</p>
+      <p>F1 qualifying time is dominated by car performance, so a driver's true qualifying skill is the delta to their teammate (identical machinery). Race results reflect the driver: position gained from grid to finish, plus where you actually ended up.</p>
 
-      <h2>v1 — the original metric</h2>
-      <p><strong>Quali rating</strong> per race:<br>
-      <code>Δ% = (t_driver − t_teammate) / t_teammate × 100</code><br>
-      <code>QualiRating = clamp(50 − Δ% × 25, 0, 100)</code></p>
-      <p><strong>Racecraft rating</strong> per race:<br>
-      <code>net = Σ(1/k for k in positions_gained) − Σ(1/k for k in positions_lost)</code><br>
-      <code>Racecraft = clamp(50 + net × 25, 0, 100)</code></p>
-      <p><strong>Overall</strong> = 0.40 × Quali + 0.60 × Racecraft</p>
+      <h2>The v3 formula</h2>
+      <p><strong>Overall = 0.30·Quali + 0.40·Racecraft + 0.30·Finish</strong></p>
 
-      <h2>v2 — the enrichments</h2>
+      <h3>Quali rating (30%)</h3>
+      <p><code>Δ% = (t_driver − t_teammate) / t_teammate × 100</code><br>
+      <code>QualiRating = clamp(50 − Δ% × 25, 0, 100)</code><br>
+      Uses the deepest Q-session both drivers reached. A 1% advantage = 75; 1% deficit = 25.</p>
 
-      <h3>1. DNF-adjusted Racecraft</h3>
-      <p>Free positions (gained because cars ahead retired) inflate v1's racecraft. v2 re-ranks each driver's grid position <em>among finishers only</em> before computing the gain. If three cars from grid 2/5/7 retire and you started P10 → P5, your adjusted gain is 7 → 5 (= +2 weighted), not 10 → 5 (= +5).</p>
+      <h3>Racecraft (40%) — points-weighted, DNF-adjusted</h3>
+      <p>The earlier <code>1/k</code> weighting summed too generously across deep grids — a P20→P10 recovery was scoring as much as a P3→P1 win. v3 replaces it with the F1 points scale:</p>
+      <p><code>v(p) = {25, 18, 15, 12, 10, 8, 6, 4, 2, 1, 0…}</code> for p = 1,2,3,…<br>
+      <code>net = v(finish) − v(grid)</code><br>
+      <code>Racecraft = clamp(50 + net × 2.5, 0, 100)</code></p>
+      <p>So P3→P1 gains 10 points (75 score), P20→P10 gains 1 point (52.5 score), P1→P5 loses 15 points (12.5 score). DNF-adjusted: grid is re-ranked among finishers only so retirements ahead don't inflate gains.</p>
 
-      <h3>2. Sprint-race contribution</h3>
-      <p>Each sprint counts as 0.3 of a race in season aggregates — short, noisier, but real H2H data. Sprint qualifying H2Hs also feed Elo.</p>
+      <h3>Finish rating (30%) — absolute anchor</h3>
+      <p><code>Finish = clamp(100 × (21 − finish) / 20, 0, 100)</code><br>
+      P1 = 100, P5 = 80, P10 = 55, P15 = 30, P20 = 5. Driver-fault DNF = 0; mechanical DNF excluded.</p>
+      <p>This is the term the v2 metric was missing. Without it, drivers in slow cars who consistently progressed through the field could out-score race winners. With it, "where you finished" is anchored back into the score.</p>
 
-      <h3>3. Bayesian shrinkage (<code>shrunkOverall</code>)</h3>
-      <p>One-race wonders shouldn't sit at 100/100. Each driver's season mean is shrunk toward the field prior of 50:<br>
-      <code>shrunk = (n × observed + k × 50) / (n + k)</code> with <code>k = 10</code>.<br>
-      A driver with 2 races at 95 → shrunk to ≈87. With 24 races at 95 → ≈82. With 1 race at 100 → ≈54.</p>
+      <h2>Aggregation enrichments</h2>
 
-      <h3>4. Best-75% (<code>best75Overall</code>)</h3>
-      <p>Drops the worst 25% of races before averaging — historically how F1 awarded the championship until 1990. Mutes unlucky weekends without throwing them away entirely.</p>
+      <h3>DNF-adjusted Racecraft</h3>
+      <p>Re-ranks each driver's grid position <em>among finishers only</em> before computing the gain, so free positions from cars ahead retiring don't count.</p>
 
-      <h3>5. Pit-stop counts</h3>
-      <p>We expose pit-stop counts per driver per race so users can spot strategy-driven gains. Without lap-by-lap data we can't fully attribute on-track vs pit-cycle passes — but the count is now visible alongside the result.</p>
+      <h3>Sprint-race contribution</h3>
+      <p>Each sprint counts as 0.3 of a race in season aggregates. Sprint qualifying H2Hs also feed Elo.</p>
 
-      <h3>6. Teammate Elo</h3>
-      <p>Each teammate qualifying H2H since 1950 updates a pair of Elo ratings (K = 24, init 1500). Sprint quali also counted. A separate Elo runs for finishing position H2H. Elo solves the unbounded-teammate-quality problem in DPI: beating a 4-time champion is now mechanically harder to register than beating a rookie.</p>
+      <h3>Bayesian shrinkage (<code>shrunkOverall</code>)</h3>
+      <p><code>shrunk = (n × observed + k × 50) / (n + k)</code> with <code>k = 10</code>. Pulls one-race-wonder scores toward the field mean.</p>
 
-      <h3>7. Ridge driver/car decomposition (<code>DSC</code>)</h3>
-      <p>For each season we fit a ridge-regularized linear model:<br>
-      <code>log(t / median_in_session) = α_driver + β_team + ε</code><br>
-      The driver coefficient α isolates who is fast independent of the car. Negative α = faster than expected. We map it to a 0-100 score: <code>DSC = clamp(50 − α × 2500, 0, 100)</code>. Ridge regularisation gives natural Bayesian-style shrinkage so small samples don't blow up.</p>
+      <h3>Best-75% (<code>best75Overall</code>)</h3>
+      <p>Drops the worst quartile of races — how F1 awarded the championship until 1990. Mutes unlucky weekends.</p>
+
+      <h3>Pit-stop counts</h3>
+      <p>Exposed per driver per race so users can spot strategy-driven gains. Without lap-by-lap data we can't fully attribute on-track vs pit-cycle passes.</p>
+
+      <h3>Teammate Elo (<code>qElo</code>, <code>rElo</code>)</h3>
+      <p>Each teammate qualifying H2H since 1950 updates a pair of Elo ratings (K = 24, init 1500). Sprint quali included. A separate race-finish Elo also runs. Solves the unbounded-teammate-quality problem.</p>
+
+      <h3>Ridge driver/car decomposition (<code>DSC</code>)</h3>
+      <p><code>log(t / median_in_session) = α_driver + β_team + ε</code> with L2 regularisation. <code>DSC = clamp(50 − α × 2500, 0, 100)</code>. Isolates driver effect from car effect using all of a season's quali data simultaneously.</p>
 
       <h2>Edge cases</h2>
       <ul>
-        <li><strong>Mechanical DNF</strong> → racecraft excluded, quali kept. The "leading by 20s and the engine dies" case lives here.</li>
-        <li><strong>Driver-fault DNF</strong> (collision / accident / spun off) → racecraft = 0.</li>
-        <li><strong>No teammate / no quali time</strong> → that race's quali score excluded.</li>
+        <li><strong>Mechanical DNF</strong> → racecraft <em>and</em> finish excluded; quali kept.</li>
+        <li><strong>Driver-fault DNF</strong> (collision / accident / spun off) → racecraft = 0, finish = 0.</li>
+        <li><strong>No teammate / no quali time</strong> → that race's quali excluded.</li>
         <li><strong>Pit-lane start (grid 0)</strong> → treated as P20.</li>
       </ul>
 

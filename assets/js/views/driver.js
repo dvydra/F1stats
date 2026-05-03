@@ -52,6 +52,7 @@ const DriverView = {
             UI.statBlock('Best 75% DPI', DPI.fmtScore(myDpi.best75Overall)),
             UI.statBlock('Mean Quali', DPI.fmtScore(myDpi.meanQuali)),
             UI.statBlock('Mean Race (DNF-adj)', DPI.fmtScore(myDpi.meanRace)),
+            UI.statBlock('Mean Finish', DPI.fmtScore(myDpi.meanFinish)),
             UI.statBlock('Quali Elo',
               myDpi.qualiElo != null ? Math.round(myDpi.qualiElo) : '—',
               'teammate H2H'),

@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# f1 — wrapper for the F1stats CLI. Forwards to cli/f1.py.
+exec python3 "$(dirname "$0")/cli/f1.py" "$@"
