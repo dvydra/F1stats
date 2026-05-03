@@ -600,6 +600,16 @@ def main():
     with open(OUT / "countries.json", "w") as f:
         json.dump(countries_out, f, separators=(",", ":"), ensure_ascii=False)
 
+    # Per-team DSC alpha by year — bakes the ridge "car effect" timeline that
+    # drives the constructor-page car-evolution chart.
+    season_dsc_teams.setdefault  # already populated during the per-year loop
+    constructor_dsc_out = {}
+    for year, teams in season_dsc_teams.items():
+        for tid, alpha in (teams or {}).items():
+            constructor_dsc_out.setdefault(tid, {})[str(year)] = round(alpha, 6)
+    with open(OUT / "constructor-dsc.json", "w") as f:
+        json.dump(constructor_dsc_out, f, separators=(",", ":"))
+
     with open(OUT / "grands-prix.json", "w") as f:
         json.dump([{"id": g["id"], "name": g.get("name"),
                     "fullName": g.get("fullName"), "country": g.get("countryId")}

@@ -73,6 +73,7 @@ const SeasonView = {
       const tabDefs = [
         { id: 'drivers', label: 'Drivers' },
         { id: 'constructors', label: 'Constructors' },
+        { id: 'trajectory', label: 'Trajectory' },
         { id: 'schedule', label: 'Schedule' },
         { id: 'dpi-vs-points', label: 'DPI vs Points' },
       ];
@@ -83,6 +84,7 @@ const SeasonView = {
         $$('button', tabs).forEach(b => b.classList.toggle('active', b.dataset.tab === currentTab));
         if (currentTab === 'drivers') content.appendChild(driversTab(season, drivers, constructors, dpi));
         else if (currentTab === 'constructors') content.appendChild(constructorsTab(season, constructors));
+        else if (currentTab === 'trajectory') content.appendChild(trajectoryTab(season, drivers, constructors));
         else if (currentTab === 'schedule') content.appendChild(scheduleTab(season, drivers, gpMap, year));
         else if (currentTab === 'dpi-vs-points') content.appendChild(dpiVsPointsTab(dpi, season, drivers, constructors));
       };
@@ -145,6 +147,286 @@ const SeasonView = {
           })
         )
       );
+    }
+
+    function trajectoryTab(season, drivers, constructors) {
+      const completedRaces = season.races.filter(r => r.results && r.results.length);
+      if (!completedRaces.length) {
+        return UI.el('section', { class: 'card' },
+          UI.h2({}, 'Trajectory'),
+          UI.p({ class: 'muted' }, 'No races completed yet — come back after round 1.'));
+      }
+      const labels = completedRaces.map(r => `R${r.round}`);
+
+      // Per-driver series, indexed by completed-race index.
+      // Discover all drivers with ANY appearance in this season.
+      const allDriverIds = new Set();
+      for (const race of completedRaces) {
+        for (const r of race.results) allDriverIds.add(r.driverId);
+      }
+      const driverIds = [...allDriverIds];
+
+      // Pull team for each driver from their first race result this season.
+      const teamFor = new Map();
+      for (const did of driverIds) {
+        for (const race of completedRaces) {
+          const r = race.results.find(x => x.driverId === did);
+          if (r) { teamFor.set(did, r.constructorId); break; }
+        }
+      }
+
+      // Stable team palette so teammates share a colour.
+      const palette = ['#e10600', '#1f8efa', '#7bd389', '#ffd166', '#a986ff',
+                       '#ff7a45', '#13c2c2', '#eb2f96', '#52c41a', '#faad14',
+                       '#2f54eb', '#fa541c', '#9e1068', '#36cfc9', '#fadb14',
+                       '#722ed1'];
+      const teamColor = new Map();
+      let cIdx = 0;
+      const colourFor = (teamId) => {
+        if (!teamId) return '#888';
+        if (!teamColor.has(teamId)) teamColor.set(teamId, palette[cIdx++ % palette.length]);
+        return teamColor.get(teamId);
+      };
+      // Solid for the teammate who's currently leading the championship; dashed
+      // for the second teammate — gives a visible H2H without extra colours.
+      const dashByTeam = new Map();
+      const driverDashes = new Map();
+      for (const did of driverIds) {
+        const team = teamFor.get(did);
+        if (!team) continue;
+        if (!dashByTeam.has(team)) { dashByTeam.set(team, [false]); driverDashes.set(did, false); }
+        else                       { driverDashes.set(did, true); }
+      }
+
+      // Build series per driver:
+      //   cumPts[i] - cumulative points after race i  (from official standings)
+      //   champPos[i] - championship position after race i
+      //   finishPos[i] - finishing position in race i (null if didn't appear)
+      //   gridPos[i] - grid position in race i
+      const series = new Map();
+      for (const did of driverIds) {
+        series.set(did, { cum: [], champ: [], finish: [], grid: [] });
+      }
+      let prevCum = new Map();
+      for (let i = 0; i < completedRaces.length; i++) {
+        const race = completedRaces[i];
+        const stMap = new Map((race.driverStandings || []).map(s => [s.driverId, s]));
+        const resMap = new Map((race.results || []).map(r => [r.driverId, r]));
+        for (const did of driverIds) {
+          const ser = series.get(did);
+          const st = stMap.get(did);
+          // Cumulative points: prefer standings if present, otherwise carry the
+          // previous value forward (driver scored 0 at this round).
+          const cum = st?.points ?? prevCum.get(did) ?? null;
+          ser.cum.push(cum);
+          if (cum != null) prevCum.set(did, cum);
+          ser.champ.push(st?.position ?? null);
+          const r = resMap.get(did);
+          ser.finish.push(r?.position ?? null);
+          ser.grid.push(r?.grid ?? null);
+        }
+      }
+
+      // Sort drivers by final standings (so legend is intuitive).
+      const finalRank = new Map(season.finalDriverStandings.map((s, i) => [s.driverId, i]));
+      driverIds.sort((a, b) =>
+        (finalRank.get(a) ?? 999) - (finalRank.get(b) ?? 999));
+
+      const datasetFor = (key, opts = {}) => driverIds.map(did => {
+        const drv = drivers.get(did);
+        const teamId = teamFor.get(did);
+        const data = series.get(did)[key];
+        return {
+          label: drv?.lastName || drv?.name || did,
+          data,
+          borderColor: colourFor(teamId),
+          backgroundColor: colourFor(teamId),
+          borderDash: driverDashes.get(did) ? [6, 4] : [],
+          tension: 0.2,
+          spanGaps: true,
+          pointRadius: opts.pointRadius ?? 2,
+          borderWidth: 2,
+          driverId: did,
+        };
+      });
+
+      // Compute axis bounds for inverted-y position charts.
+      const allChamp = [].concat(...driverIds.map(d => series.get(d).champ)).filter(v => v != null);
+      const allFinish = [].concat(...driverIds.map(d => series.get(d).finish)).filter(v => v != null);
+      const champMax = Math.max(10, ...allChamp);
+      const finishMax = Math.max(10, ...allFinish);
+
+      const wrap = UI.div({});
+
+      const baseOpts = (extra = {}) => ({
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: 'nearest', axis: 'x', intersect: false },
+        plugins: {
+          legend: { display: true, labels: { color: '#e6e9ee', boxWidth: 12,
+            font: { size: 10 } } },
+          tooltip: { callbacks: {
+            title: (items) => items[0]?.label ? `Round ${items[0].label.replace('R','')}` : '',
+            ...(extra.tooltipCallbacks || {}),
+          } },
+          ...(extra.plugins || {}),
+        },
+        scales: {
+          x: { ticks: { color: '#9aa3af' }, grid: { color: '#2a313a' } },
+          ...(extra.scales || {}),
+        },
+      });
+
+      const card = (title, blurb, build) => {
+        const c = UI.el('section', { class: 'card' },
+          UI.h2({}, title),
+          blurb ? UI.p({ class: 'muted' }, blurb) : null);
+        const canvas = UI.el('canvas');
+        c.appendChild(UI.el('div', { class: 'chart-wrap tall' }, canvas));
+        wrap.appendChild(c);
+        setTimeout(() => build(canvas), 10);
+      };
+
+      // 1) Cumulative points hill chart.
+      card('Cumulative points by round',
+        'The "hill chart" — every driver\'s running points total. Lines that climb fast = a hot run; ' +
+        'flat lines = a cold streak. Solid vs dashed within a team distinguishes teammates.',
+        (canvas) => new Chart(canvas, {
+          type: 'line',
+          data: { labels, datasets: datasetFor('cum') },
+          options: baseOpts({
+            scales: {
+              y: { ticks: { color: '#9aa3af' }, grid: { color: '#2a313a' },
+                title: { display: true, text: 'Championship points', color: '#9aa3af' } },
+            },
+            tooltipCallbacks: {
+              label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y ?? '—'} pts`,
+            },
+          }),
+        }));
+
+      // 2) Championship position by round.
+      card('Championship position by round',
+        'Where each driver sits in the standings after every round. Flipped y-axis: P1 is at the top.',
+        (canvas) => new Chart(canvas, {
+          type: 'line',
+          data: { labels, datasets: datasetFor('champ', { pointRadius: 3 }) },
+          options: baseOpts({
+            scales: {
+              y: { reverse: true, min: 1, max: champMax,
+                ticks: { color: '#9aa3af', stepSize: 1, precision: 0,
+                         callback: v => 'P' + v },
+                grid: { color: '#2a313a' },
+                title: { display: true, text: 'Championship position', color: '#9aa3af' } },
+            },
+            tooltipCallbacks: {
+              label: (ctx) => `${ctx.dataset.label}: P${ctx.parsed.y ?? '—'}`,
+            },
+          }),
+        }));
+
+      // 3) Race finishing position by round.
+      card('Race finishing position by round',
+        'Per-race finish, not cumulative. Spikes show breakout drives or DNFs.',
+        (canvas) => new Chart(canvas, {
+          type: 'line',
+          data: { labels, datasets: datasetFor('finish', { pointRadius: 3 }) },
+          options: baseOpts({
+            scales: {
+              y: { reverse: true, min: 1, max: finishMax,
+                ticks: { color: '#9aa3af', stepSize: 1, precision: 0,
+                         callback: v => 'P' + v },
+                grid: { color: '#2a313a' },
+                title: { display: true, text: 'Finish', color: '#9aa3af' } },
+            },
+            tooltipCallbacks: {
+              label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y == null ? 'DNS/DNF' : 'P'+ctx.parsed.y}`,
+            },
+          }),
+        }));
+
+      // 4) Gap to championship leader.
+      card('Gap to leader (points)',
+        'Distance to the top of the standings after each round — flatlines around 0 are co-leaders, ' +
+        'rising lines are slipping behind.',
+        (canvas) => {
+          // Compute gap = leaderPts - driverPts at each round.
+          const leaderCum = labels.map((_, i) => {
+            return Math.max(0, ...driverIds.map(d => series.get(d).cum[i] ?? 0));
+          });
+          const datasets = driverIds.map(did => {
+            const teamId = teamFor.get(did);
+            const drv = drivers.get(did);
+            const data = series.get(did).cum.map((v, i) =>
+              v == null ? null : leaderCum[i] - v);
+            return {
+              label: drv?.lastName || drv?.name || did,
+              data,
+              borderColor: colourFor(teamId),
+              backgroundColor: colourFor(teamId),
+              borderDash: driverDashes.get(did) ? [6, 4] : [],
+              tension: 0.2,
+              spanGaps: true,
+              pointRadius: 2,
+              borderWidth: 2,
+            };
+          });
+          new Chart(canvas, {
+            type: 'line',
+            data: { labels, datasets },
+            options: baseOpts({
+              scales: {
+                y: { reverse: true,
+                  ticks: { color: '#9aa3af',
+                           callback: v => v === 0 ? 'leader' : `−${v}` },
+                  grid: { color: '#2a313a' },
+                  title: { display: true, text: 'Pts behind leader',
+                           color: '#9aa3af' } },
+              },
+              tooltipCallbacks: {
+                label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y == null ? '—' : (ctx.parsed.y === 0 ? 'leader' : '−' + ctx.parsed.y + ' pts')}`,
+              },
+            }),
+          });
+        });
+
+      // 5) Per-race points scored (small bars per round, top 6 only).
+      card('Points scored per race (top 6)',
+        'Per-race points (not cumulative) for the top 6 drivers in the standings. ' +
+        'Big single-race spikes = race wins; consecutive small bars = consistent points-finishing.',
+        (canvas) => {
+          const top6 = driverIds.slice(0, 6);
+          const datasets = top6.map(did => {
+            const drv = drivers.get(did);
+            const data = labels.map((_, i) => {
+              const race = completedRaces[i];
+              const r = race.results.find(x => x.driverId === did);
+              const sprint = (race.sprintResults || []).find(x => x.driverId === did);
+              return (r?.points || 0) + (sprint?.points || 0);
+            });
+            return {
+              label: drv?.lastName || drv?.name || did,
+              data,
+              backgroundColor: colourFor(teamFor.get(did)),
+              borderWidth: 0,
+            };
+          });
+          new Chart(canvas, {
+            type: 'bar',
+            data: { labels, datasets },
+            options: baseOpts({
+              scales: {
+                y: { ticks: { color: '#9aa3af' }, grid: { color: '#2a313a' },
+                  title: { display: true, text: 'Points (race + sprint)',
+                           color: '#9aa3af' } },
+              },
+              tooltipCallbacks: {
+                label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y} pts`,
+              },
+            }),
+          });
+        });
+
+      return wrap;
     }
 
     function scheduleTab(season, drivers, gpMap, year) {

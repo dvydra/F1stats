@@ -25,6 +25,7 @@ const F1Data = {
   driverSearch: () => loadJSON('driver-search.json'),
   constructorSearch: () => loadJSON('constructor-search.json'),
   countries: () => loadJSON('countries.json'),
+  constructorDsc: () => loadJSON('constructor-dsc.json'),
   constructors: () => loadJSON('constructors.json'),
   grandsPrix: () => loadJSON('grands-prix.json'),
   circuits: () => loadJSON('circuits.json'),

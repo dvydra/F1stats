@@ -9,9 +9,12 @@ const ConstructorView = {
       ]);
       const c = constructors.get(constructorId);
       if (!c) throw new Error(`Unknown constructor: ${constructorId}`);
-      const [career, manifest] = await Promise.all([
-        F1Data.constructorCareer(constructorId), F1Data.manifest(),
+      const [career, manifest, dscMap] = await Promise.all([
+        F1Data.constructorCareer(constructorId),
+        F1Data.manifest(),
+        F1Data.constructorDsc(),
       ]);
+      const dscByYear = dscMap[constructorId] || {};
 
       const view = UI.div({});
       view.appendChild(UI.crumbs(
@@ -94,8 +97,8 @@ const ConstructorView = {
       }
 
       function chartTab() {
-        const wrap = UI.el('section', { class: 'card' });
-        wrap.appendChild(UI.h2({}, 'Constructor points by season'));
+        const wrap = UI.div({});
+
         const data = career.map(yr => ({
           year: yr.year, points: yr.finalStanding?.points ?? 0,
           pos: yr.finalStanding?.position ?? null,
@@ -103,10 +106,93 @@ const ConstructorView = {
         const labels = data.map(d =>
           UI.isPartialSeason(d.year, manifest) ? `${d.year}*` : String(d.year));
         const points = data.map(d => d.points);
-        const canvas = UI.el('canvas');
-        wrap.appendChild(UI.el('div', { class: 'chart-wrap tall' }, canvas));
+
+        // Per-season points + final position.
+        const ptsCard = UI.el('section', { class: 'card' },
+          UI.h2({}, 'Constructor points by season'));
+        const ptsCanvas = UI.el('canvas');
+        ptsCard.appendChild(UI.el('div', { class: 'chart-wrap tall' }, ptsCanvas));
+        wrap.appendChild(ptsCard);
+
+        // Ridge-decomposed car pace (DSC alpha) by season.
+        // DSC alpha = log-time vs field median, isolated from driver effect.
+        // More-negative alpha = faster machinery. We plot -alpha so up = faster.
+        const dscRows = data
+          .map(d => ({ year: d.year, alpha: dscByYear[String(d.year)] ?? null }));
+        const dscValues = dscRows.map(r =>
+          r.alpha == null ? null : -r.alpha * 100);  // % advantage vs field median
+        const dscCard = UI.el('section', { class: 'card' });
+        if (dscValues.some(v => v != null)) {
+          dscCard.appendChild(UI.h2({}, 'Car pace evolution (ridge DSC)'));
+          dscCard.appendChild(UI.p({ class: 'muted' },
+            'Pure car effect from each season\'s qualifying ridge decomposition ' +
+            '(driver skill held constant). Up = faster machinery. The y-axis is the ' +
+            'implied % lap-time advantage over the season\'s field median; values around ' +
+            '0% are mid-grid, +1% is roughly title-car territory, −1% is back-of-grid.'));
+          const dscCanvas = UI.el('canvas');
+          dscCard.appendChild(UI.el('div', { class: 'chart-wrap tall' }, dscCanvas));
+          wrap.appendChild(dscCard);
+
+          setTimeout(() => {
+            new Chart(dscCanvas, {
+              type: 'line',
+              data: {
+                labels,
+                datasets: [{
+                  label: 'Car pace vs field median',
+                  data: dscValues,
+                  borderColor: '#1f8efa',
+                  backgroundColor: 'rgba(31,142,250,0.18)',
+                  fill: true,
+                  tension: 0.25,
+                  spanGaps: true,
+                  pointRadius: 4,
+                }],
+              },
+              options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: {
+                  legend: { display: false },
+                  tooltip: { callbacks: {
+                    label: (ctx) => ctx.parsed.y == null
+                      ? '—'
+                      : `${ctx.parsed.y > 0 ? '+' : ''}${ctx.parsed.y.toFixed(2)}% pace`,
+                  } },
+                },
+                scales: {
+                  x: { ticks: { color: '#9aa3af' }, grid: { color: '#2a313a' } },
+                  y: {
+                    ticks: { color: '#9aa3af', callback: v => `${v > 0 ? '+' : ''}${v}%` },
+                    grid: { color: '#2a313a' },
+                    title: { display: true, text: 'Pace vs field median', color: '#9aa3af' },
+                  },
+                },
+              },
+              plugins: [{
+                id: 'zeroLine',
+                beforeDatasetsDraw(chart) {
+                  const y = chart.scales.y;
+                  if (!y) return;
+                  const { ctx, chartArea } = chart;
+                  const yPx = y.getPixelForValue(0);
+                  if (yPx < chartArea.top || yPx > chartArea.bottom) return;
+                  ctx.save();
+                  ctx.strokeStyle = 'rgba(154,163,175,0.5)';
+                  ctx.setLineDash([4, 4]);
+                  ctx.lineWidth = 1;
+                  ctx.beginPath();
+                  ctx.moveTo(chartArea.left, yPx);
+                  ctx.lineTo(chartArea.right, yPx);
+                  ctx.stroke();
+                  ctx.restore();
+                },
+              }],
+            });
+          }, 10);
+        }
+
         setTimeout(() => {
-          new Chart(canvas, {
+          new Chart(ptsCanvas, {
             type: 'bar',
             data: { labels, datasets: [{ data: points, backgroundColor: '#e10600',
               label: 'Points' }] },
